@@ -1,0 +1,119 @@
+name: init-repo.yml
+on:
+  workflow_dispatch:
+
+jobs:
+  permission-setup:
+    name: Permission setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get sha of initial commit
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          echo "INIT_COMMIT_SHA=$(gh api /repos/${{ github.repository }}/git/matching-refs/heads/main | jq -r '.[].object.sha')" >> $GITHUB_ENV
+      - name: Add integrators as maintainer
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          gh api \
+          --method PUT \
+          /orgs/Leuchtfeuer/teams/mautic-integrators/repos/${{ github.repository }} \
+          -f 'permission=maintain'
+
+      - name: Create production branches
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          for n in 5 7; do
+          gh api \
+          --method POST \
+          repos/${{ github.repository }}/git/refs \
+          -f "sha=${{ env.INIT_COMMIT_SHA }}" \
+          -f "ref=refs/heads/mautic$n"
+          done
+
+      - name: Protect production branches
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          cat > input.json << 'EOF'
+          {
+            "name": "Branch protection",
+            "target": "branch",
+            "enforcement": "active",
+            "conditions": {
+              "ref_name": {
+                "include": [
+                  "refs/heads/mautic*"
+                ],
+                "exclude": []
+              }
+            },
+            "bypass_actors": [
+              {
+                "actor_id": 5,
+                "actor_type": "RepositoryRole",
+                "bypass_mode": "always"
+              },
+              {
+                "actor_id": 3649666,
+                "actor_type": "Team",
+                "bypass_mode": "exempt"
+              }
+            ],
+            "rules": [
+              {
+                "type": "creation"
+              },
+              {
+                "type": "update"
+              },
+              {
+                "type": "deletion"
+              },
+              {
+                "type": "pull_request",
+                "parameters": {
+                  "dismiss_stale_reviews_on_push": false,
+                  "require_code_owner_review": false,
+                  "require_last_push_approval": false,
+                  "required_approving_review_count": 0,
+                  "required_review_thread_resolution": false
+                }
+              }
+            ]
+          }
+          EOF
+          
+          gh api \
+          --method POST \
+          /repos/${{ github.repository }}/rulesets \
+          --input input.json
+        # "restrictions": who can push to branch
+
+      - name: Change default branch
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          gh api \
+          --method PATCH \
+          /repos/${{ github.repository }} \
+          -f "default_branch=mautic5"
+
+      - name: Delete main branch
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          gh api \
+          --method DELETE \
+          /repos/${{ github.repository }}/git/refs/heads/main
+
+      - name: Add developers with write access
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          gh api \
+          --method PUT \
+          /orgs/Leuchtfeuer/teams/mautic-devs/repos/${{ github.repository }} \
+          -f 'permission=push'
