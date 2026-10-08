@@ -62,6 +62,26 @@ Double-click a tile to insert it. A single click only highlights the tile. One s
 
 Make sure the plugin is installed and published. If it does not appear after adding the folder, run `bin/console cache:clear` and then `bin/console mautic:plugins:reload`.
 
+## Development
+
+The picker is a React app in `Assets/js/src`. Mautic loads the built files `Assets/dist/picker.js` and `Assets/dist/picker.css`, so those files are committed and must be rebuilt after a change to the source.
+
+From this plugin directory:
+
+```bash
+npm ci
+npm run build
+```
+
+`npm ci` installs the locked dependencies. `npm run build` runs Vite and writes both files into `Assets/dist`. The build clears that directory first.
+
+Inside a Mautic checkout, run the same scripts with a prefix so they do not hit Mautic's own webpack build:
+
+```bash
+npm --prefix plugins/LeuchtfeuerMediaAssetsBasicBundle ci
+npm --prefix plugins/LeuchtfeuerMediaAssetsBasicBundle run build
+```
+
 ## Credits
 
 Leuchtfeuer Digital Marketing GmbH
