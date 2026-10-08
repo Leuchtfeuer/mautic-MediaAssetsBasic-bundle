@@ -1,5 +1,5 @@
 parameters:
-    level: 6
+    level: max
     tmpDir: .phpstan-cache
     reportUnmatchedIgnoredErrors: false
 

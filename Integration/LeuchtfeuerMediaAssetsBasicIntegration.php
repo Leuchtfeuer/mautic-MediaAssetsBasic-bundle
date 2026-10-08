@@ -21,7 +21,7 @@ class LeuchtfeuerMediaAssetsBasicIntegration extends BasicIntegration implements
 
     public function getDisplayName(): string
     {
-        return 'Media Assets Basic by Leuchtfeuer';
+        return 'Media & Assets (Basic) by Leuchtfeuer';
     }
 
     public function getIcon(): string

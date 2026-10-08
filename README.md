@@ -1,6 +1,8 @@
-# Media Assets Basic by Leuchtfeuer
+# Plugin: Media & Assets (Basic) by Leuchtfeuer
 
-Skeleton for a Mautic 7 plugin. It can be installed and published. It does not implement media asset behaviour yet.
+Powerful Media & Assets Manager for organizing and picking images etc. in the Mautic builders.
+
+The media picker is not implemented yet. The plugin can be installed and published.
 
 ## Requirements
 
@@ -14,7 +16,7 @@ The plugin folder must be named `LeuchtfeuerMediaAssetsBasicBundle`.
 ### Composer
 
 ```bash
-composer require leuchtfeuer/mautic-media-assets-basic-bundle
+composer require leuchtfeuer/mautic-mediaassetsbasic-bundle
 ```
 
 Then clear the cache and reload plugins:
@@ -29,11 +31,11 @@ bin/console mautic:plugins:reload
 1. Copy or clone this repository into `plugins/LeuchtfeuerMediaAssetsBasicBundle`.
 2. Clear the cache: `bin/console cache:clear`
 3. In Mautic go to **Plugins** → **Install/Upgrade Plugins**.
-4. Open **Media Assets Basic by Leuchtfeuer** and set **Published** to **Yes**.
+4. Open **Media & Assets (Basic) by Leuchtfeuer** and set **Published** to **Yes**.
 
 ## Configuration
 
-**Settings → Plugins → Media Assets Basic by Leuchtfeuer**
+**Settings → Plugins → Media & Assets (Basic) by Leuchtfeuer**
 
 The config dialog only has the published toggle. There are no feature settings yet.
 

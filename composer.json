@@ -1,14 +1,15 @@
 {
-  "name": "leuchtfeuer/mautic-media-assets-basic-bundle",
-  "description": "Skeleton for a Mautic 7 media assets plugin.",
+  "name": "leuchtfeuer/mautic-mediaassetsbasic-bundle",
+  "description": "Powerful Media & Assets Manager for organizing and picking images etc. in the Mautic builders",
   "type": "mautic-plugin",
   "license": "GPL-3.0-or-later",
-  "keywords": ["mautic", "plugin", "media", "assets"],
+  "keywords": ["mautic", "plugin", "integration", "media", "assets", "image", "images", "editor", "builder"],
   "authors": [
     {
       "name": "Leuchtfeuer Digital Marketing GmbH",
       "email": "mautic-plugins@Leuchtfeuer.com",
-      "homepage": "https://www.Leuchtfeuer.com"
+      "homepage": "https://Leuchtfeuer.com/mautic/",
+      "role": "Developer"
     }
   ],
   "require": {

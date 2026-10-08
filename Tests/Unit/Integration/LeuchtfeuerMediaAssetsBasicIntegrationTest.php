@@ -14,7 +14,7 @@ final class LeuchtfeuerMediaAssetsBasicIntegrationTest extends TestCase
         $integration = new LeuchtfeuerMediaAssetsBasicIntegration();
 
         $this->assertSame(LeuchtfeuerMediaAssetsBasicIntegration::NAME, $integration->getName());
-        $this->assertSame('Media Assets Basic by Leuchtfeuer', $integration->getDisplayName());
+        $this->assertSame('Media & Assets (Basic) by Leuchtfeuer', $integration->getDisplayName());
         $this->assertSame(
             'plugins/LeuchtfeuerMediaAssetsBasicBundle/Assets/img/icon.png',
             $integration->getIcon(),
