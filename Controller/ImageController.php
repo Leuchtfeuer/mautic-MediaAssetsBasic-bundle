@@ -13,6 +13,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\IniSize;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\UrlImageImporter;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -52,7 +53,7 @@ final class ImageController extends AjaxController
                 'files' => [[
                     'ok'    => false,
                     'name'  => '',
-                    'error' => sprintf('File exceeds the upload limit of %s.', IniSize::uploadMaxFilesize()),
+                    'error' => $this->limitMessage(),
                 ]],
             ], Response::HTTP_BAD_REQUEST);
         }
@@ -72,15 +73,15 @@ final class ImageController extends AjaxController
                     'ok'    => false,
                     'name'  => $name,
                     'error' => \UPLOAD_ERR_INI_SIZE === $file->getError() || \UPLOAD_ERR_FORM_SIZE === $file->getError()
-                        ? sprintf('File exceeds the upload limit of %s.', IniSize::uploadMaxFilesize())
-                        : 'The file could not be uploaded.',
+                        ? $this->limitMessage()
+                        : $this->translator->trans(Translation::ERROR_UPLOAD),
                 ];
                 continue;
             }
 
             $contents = file_get_contents($file->getPathname());
             if (false === $contents) {
-                $results[] = ['ok' => false, 'name' => $name, 'error' => 'The file could not be read.'];
+                $results[] = ['ok' => false, 'name' => $name, 'error' => $this->translator->trans(Translation::ERROR_READ)];
                 continue;
             }
 
@@ -88,7 +89,7 @@ final class ImageController extends AjaxController
                 $image     = $storage->store($urls->directory(), $name, $contents);
                 $results[] = ['ok' => true, 'image' => $this->present($image, $urls)];
             } catch (ImageRejectedException $exception) {
-                $results[] = ['ok' => false, 'name' => $name, 'error' => $exception->getMessage()];
+                $results[] = ['ok' => false, 'name' => $name, 'error' => $this->rejected($exception)];
             }
         }
 
@@ -104,13 +105,13 @@ final class ImageController extends AjaxController
         $payload = json_decode($request->getContent(), true);
         $url     = is_array($payload) ? ($payload['url'] ?? null) : $request->request->get('url');
         if (!is_string($url) || '' === trim($url)) {
-            return $this->sendJsonResponse(['error' => 'Enter an image URL.'], Response::HTTP_BAD_REQUEST);
+            return $this->sendJsonResponse(['error' => $this->translator->trans(Translation::ERROR_URL_REQUIRED)], Response::HTTP_BAD_REQUEST);
         }
 
         try {
             $image = $importer->import($urls->directory(), trim($url));
         } catch (ImageRejectedException $exception) {
-            return $this->sendJsonResponse(['error' => $exception->getMessage()], Response::HTTP_BAD_REQUEST);
+            return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
 
         return $this->sendJsonResponse(['image' => $this->present($image, $urls)]);
@@ -126,6 +127,16 @@ final class ImageController extends AjaxController
 
     private function unavailable(): JsonResponse
     {
-        return $this->sendJsonResponse(['error' => 'Media & Assets (Basic) is not published.'], Response::HTTP_FORBIDDEN);
+        return $this->sendJsonResponse(['error' => $this->translator->trans(Translation::ERROR_UNPUBLISHED)], Response::HTTP_FORBIDDEN);
+    }
+
+    private function rejected(ImageRejectedException $exception): string
+    {
+        return $this->translator->trans($exception->getMessage(), $exception->getParameters());
+    }
+
+    private function limitMessage(): string
+    {
+        return $this->translator->trans(Translation::ERROR_UPLOAD_LIMIT, ['%limit%' => IniSize::uploadMaxFilesize()]);
     }
 }

@@ -7,12 +7,18 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration;
 use Mautic\IntegrationsBundle\Integration\BasicIntegration;
 use Mautic\IntegrationsBundle\Integration\ConfigurationTrait;
 use Mautic\IntegrationsBundle\Integration\Interfaces\BasicInterface;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 class LeuchtfeuerMediaAssetsBasicIntegration extends BasicIntegration implements BasicInterface
 {
     use ConfigurationTrait;
 
     public const NAME = 'LeuchtfeuerMediaAssetsBasic';
+
+    public function __construct(private readonly TranslatorInterface $translator)
+    {
+    }
 
     public function getName(): string
     {
@@ -21,7 +27,12 @@ class LeuchtfeuerMediaAssetsBasicIntegration extends BasicIntegration implements
 
     public function getDisplayName(): string
     {
-        return 'Media & Assets (Basic) by Leuchtfeuer';
+        return $this->translator->trans(Translation::NAME);
+    }
+
+    public function getDescription(): string
+    {
+        return $this->translator->trans(Translation::DESCRIPTION);
     }
 
     public function getIcon(): string

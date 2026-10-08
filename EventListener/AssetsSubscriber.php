@@ -8,9 +8,11 @@ use Mautic\CoreBundle\CoreEvents;
 use Mautic\CoreBundle\Event\CustomAssetsEvent;
 use Mautic\InstallBundle\Install\InstallService;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\Config;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\RouterInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 final readonly class AssetsSubscriber implements EventSubscriberInterface
 {
@@ -20,6 +22,7 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
 
     public function __construct(
         private Config $config,
+        private TranslatorInterface $translator,
         private InstallService $installer,
         private RequestStack $requestStack,
         private RouterInterface $router,
@@ -44,10 +47,16 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $messages = [];
+        foreach (Translation::picker() as $name => $key) {
+            $messages[$name] = $this->translator->trans($key);
+        }
+
         $config = [
             'listUrl'   => $this->router->generate('leuchtfeuer_media_assets_basic_image_list'),
             'uploadUrl' => $this->router->generate('leuchtfeuer_media_assets_basic_image_upload'),
             'importUrl' => $this->router->generate('leuchtfeuer_media_assets_basic_image_import'),
+            'messages'  => $messages,
         ];
 
         $assetsEvent->addScriptDeclaration(

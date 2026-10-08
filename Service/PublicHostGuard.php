@@ -6,6 +6,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\HostResolver;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 
 final readonly class PublicHostGuard
 {
@@ -20,15 +21,15 @@ final readonly class PublicHostGuard
     {
         $parts = parse_url($url);
         if (!is_array($parts) || !isset($parts['scheme'], $parts['host'])) {
-            throw new ImageRejectedException('Only http and https URLs can be imported.');
+            throw new ImageRejectedException(Translation::ERROR_SCHEME);
         }
 
         if (!in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-            throw new ImageRejectedException('Only http and https URLs can be imported.');
+            throw new ImageRejectedException(Translation::ERROR_SCHEME);
         }
 
         if (isset($parts['user']) || isset($parts['pass'])) {
-            throw new ImageRejectedException('URLs with credentials cannot be imported.');
+            throw new ImageRejectedException(Translation::ERROR_CREDENTIALS);
         }
 
         $host = trim($parts['host'], '[]');
@@ -40,7 +41,7 @@ final readonly class PublicHostGuard
 
         $ips = $this->resolver->resolve($host);
         if ([] === $ips) {
-            throw new ImageRejectedException('The image URL could not be resolved.');
+            throw new ImageRejectedException(Translation::ERROR_RESOLVE);
         }
 
         foreach ($ips as $ip) {
@@ -53,7 +54,7 @@ final readonly class PublicHostGuard
     public function assertPublicIp(string $ip): void
     {
         if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            throw new ImageRejectedException('The image URL points to a blocked address.');
+            throw new ImageRejectedException(Translation::ERROR_BLOCKED);
         }
     }
 }

@@ -34,7 +34,7 @@ export async function listImages(config: PickerConfig, page: number, limit: numb
   url.searchParams.set('limit', String(limit));
   const response = await fetch(url.toString(), { headers: headers() });
   if (!response.ok) {
-    throw new Error('Images could not be loaded.');
+    throw new Error(config.messages?.loadFailed ?? 'Images could not be loaded.');
   }
 
   return response.json() as Promise<ListResponse>;
@@ -62,17 +62,17 @@ export function uploadFile(
       try {
         payload = JSON.parse(xhr.responseText) as UploadResponse;
       } catch {
-        resolve({ ok: false, error: 'The file could not be uploaded.' });
+        resolve({ ok: false, error: config.messages?.uploadFailed ?? 'The file could not be uploaded.' });
         return;
       }
       const result = payload.files?.[0];
       if (!result || !result.ok || !result.image) {
-        resolve({ ok: false, error: result?.error || payload.error || 'The file could not be uploaded.' });
+        resolve({ ok: false, error: result?.error || payload.error || config.messages?.uploadFailed || 'The file could not be uploaded.' });
         return;
       }
       resolve({ ok: true, image: result.image });
     };
-    xhr.onerror = () => resolve({ ok: false, error: 'The file could not be uploaded.' });
+    xhr.onerror = () => resolve({ ok: false, error: config.messages?.uploadFailed ?? 'The file could not be uploaded.' });
     xhr.send(body);
   });
 }
@@ -85,7 +85,7 @@ export async function importUrl(config: PickerConfig, url: string): Promise<Medi
   });
   const payload = await response.json() as { image?: MediaImage; error?: string };
   if (!response.ok || !payload.image) {
-    throw new Error(payload.error || 'The image could not be imported.');
+    throw new Error(payload.error || config.messages?.importFailed || 'The image could not be imported.');
   }
 
   return payload.image;

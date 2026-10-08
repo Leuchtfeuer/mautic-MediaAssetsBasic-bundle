@@ -6,6 +6,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 
 final readonly class UrlImageImporter
 {
@@ -29,7 +30,7 @@ final readonly class UrlImageImporter
             $response  = $this->download($current, $addresses[0], $max);
             if (null !== $response['location']) {
                 if (self::MAX_REDIRECTS === $hop) {
-                    throw new ImageRejectedException('Too many redirects.');
+                    throw new ImageRejectedException(Translation::ERROR_REDIRECTS);
                 }
                 $current = $this->resolveLocation($current, $response['location']);
                 continue;
@@ -40,7 +41,7 @@ final readonly class UrlImageImporter
             return $this->storage->store($directory, $name, $response['body']);
         }
 
-        throw new ImageRejectedException('Too many redirects.');
+        throw new ImageRejectedException(Translation::ERROR_REDIRECTS);
     }
 
     /**
@@ -50,7 +51,7 @@ final readonly class UrlImageImporter
     {
         $parts = parse_url($url);
         if (!is_array($parts) || !isset($parts['host'], $parts['scheme'])) {
-            throw new ImageRejectedException('Only http and https URLs can be imported.');
+            throw new ImageRejectedException(Translation::ERROR_SCHEME);
         }
 
         $host = trim($parts['host'], '[]');
@@ -58,7 +59,7 @@ final readonly class UrlImageImporter
 
         $handle = curl_init($url);
         if (false === $handle) {
-            throw new ImageRejectedException('The image could not be downloaded.');
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
         $body    = '';
@@ -94,17 +95,17 @@ final readonly class UrlImageImporter
         $ok = curl_exec($handle);
         if (strlen($body) > $maxBytes) {
             curl_close($handle);
-            throw new ImageRejectedException(sprintf('The image is larger than %s.', IniSize::uploadMaxFilesize()));
+            throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
         }
 
         if (false === $ok) {
             $error = curl_errno($handle);
             curl_close($handle);
             if (CURLE_OPERATION_TIMEDOUT === $error) {
-                throw new ImageRejectedException('The image URL did not respond in time.');
+                throw new ImageRejectedException(Translation::ERROR_TIMEOUT);
             }
 
-            throw new ImageRejectedException('The image could not be downloaded.');
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
         $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
@@ -112,14 +113,14 @@ final readonly class UrlImageImporter
 
         if ($status >= 300 && $status < 400) {
             if (1 !== preg_match('/^Location:\s*(\S+)/mi', $headers, $matches)) {
-                throw new ImageRejectedException('The image could not be downloaded.');
+                throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
             }
 
             return ['body' => '', 'location' => $matches[1]];
         }
 
         if ($status < 200 || $status >= 300) {
-            throw new ImageRejectedException('The image could not be downloaded.');
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
         return ['body' => $body, 'location' => null];
@@ -133,7 +134,7 @@ final readonly class UrlImageImporter
 
         $parts = parse_url($current);
         if (!is_array($parts) || !isset($parts['scheme'], $parts['host'])) {
-            throw new ImageRejectedException('The image could not be downloaded.');
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
         $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');

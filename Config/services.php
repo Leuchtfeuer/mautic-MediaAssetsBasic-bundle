@@ -23,6 +23,7 @@ return function (ContainerConfigurator $configurator): void {
             'Assets',
             'Contract',
             'DTO',
+            'Translation.php',
         ])).'}');
 
     $services->get(LeuchtfeuerMediaAssetsBasicIntegration::class)

@@ -6,6 +6,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\InspectedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 
 final class ImageInspector
 {
@@ -21,12 +22,12 @@ final class ImageInspector
     {
         $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($path);
         if (!is_string($mime) || !isset(self::EXTENSIONS[$mime])) {
-            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
+            throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
 
         $size = @getimagesize($path);
         if (false === $size) {
-            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
+            throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
 
         return new InspectedImage($mime, self::EXTENSIONS[$mime], (int) $size[0], (int) $size[1]);
@@ -37,12 +38,12 @@ final class ImageInspector
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mime  = $finfo->buffer($contents);
         if (!is_string($mime) || !isset(self::EXTENSIONS[$mime])) {
-            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
+            throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
 
         $size = @getimagesizefromstring($contents);
         if (false === $size) {
-            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
+            throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
 
         return new InspectedImage($mime, self::EXTENSIONS[$mime], (int) $size[0], (int) $size[1]);

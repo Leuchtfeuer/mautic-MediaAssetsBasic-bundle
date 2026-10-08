@@ -6,6 +6,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 
 final readonly class ImageStorage
 {
@@ -17,13 +18,13 @@ final readonly class ImageStorage
     {
         $inspected = $this->inspector->inspectContents($contents);
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new ImageRejectedException('The image directory could not be created.');
+            throw new ImageRejectedException(Translation::ERROR_DIRECTORY);
         }
 
         $name = $this->uniqueName($directory, $this->stem($originalName), $inspected->extension);
         $path = $directory.'/'.$name;
         if (false === file_put_contents($path, $contents, LOCK_EX)) {
-            throw new ImageRejectedException('The image could not be stored.');
+            throw new ImageRejectedException(Translation::ERROR_STORE);
         }
 
         return new ListedImage($name, $inspected->width, $inspected->height, strlen($contents));
