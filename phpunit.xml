@@ -36,6 +36,11 @@
             <directory>Tests</directory>
             <directory>Translations</directory>
             <directory>vendor</directory>
+            <directory>node_modules</directory>
         </exclude>
     </source>
+
+    <extensions>
+        <bootstrap class="\Mautic\CoreBundle\Test\Extensions\DbPrefix\DbPrefix" />
+    </extensions>
 </phpunit>

@@ -1,0 +1,24 @@
+actor: AcceptanceTester
+path: Acceptance
+modules:
+  enabled:
+    - Asserts
+    - \Helper\EnvHelper
+    - \Helper\DbHelper
+    - WebDriver:
+        url: "https://web:443"
+        host: selenium-chrome
+        browser: chrome
+        port: 4444
+        window_size: maximize
+        capabilities:
+          "goog:chromeOptions":
+            args:
+              - "--ignore-certificate-errors"
+              - "--disable-dev-shm-usage"
+    - Db:
+        dsn: 'mysql:host=%DB_HOST%;port=%DB_PORT%;dbname=%DB_NAME%'
+        user: '%DB_USER%'
+        password: '%DB_PASSWD%'
+        populate: false
+        cleanup: false

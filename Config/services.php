@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\HostResolver;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\LeuchtfeuerMediaAssetsBasicIntegration;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\Support\ConfigSupport;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\DnsHostResolver;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 return function (ContainerConfigurator $configurator): void {
@@ -17,6 +19,10 @@ return function (ContainerConfigurator $configurator): void {
     $services->load('MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\', '../')
         ->exclude('../{'.implode(',', array_merge(MauticCoreExtension::DEFAULT_EXCLUDES, [
             'vendor',
+            'node_modules',
+            'Assets',
+            'Contract',
+            'DTO',
         ])).'}');
 
     $services->get(LeuchtfeuerMediaAssetsBasicIntegration::class)
@@ -30,4 +36,6 @@ return function (ContainerConfigurator $configurator): void {
         'mautic.integration.leuchtfeuermediaassetsbasic',
         LeuchtfeuerMediaAssetsBasicIntegration::class,
     );
+
+    $services->alias(HostResolver::class, DnsHostResolver::class);
 };

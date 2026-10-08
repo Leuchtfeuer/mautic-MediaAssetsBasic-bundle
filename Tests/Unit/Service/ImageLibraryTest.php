@@ -1,0 +1,71 @@
+<?php
+
+declare(strict_types=1);
+
+namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
+
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
+use PHPUnit\Framework\TestCase;
+
+final class ImageLibraryTest extends TestCase
+{
+    private string $directory;
+
+    protected function setUp(): void
+    {
+        $this->directory = sys_get_temp_dir().'/lf-media-assets-'.uniqid('', true);
+        mkdir($this->directory);
+    }
+
+    protected function tearDown(): void
+    {
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                continue;
+            }
+            $pathname = $file->getPathname();
+            $file->isDir() ? rmdir($pathname) : unlink($pathname);
+        }
+        rmdir($this->directory);
+    }
+
+    public function testListsOnlyImagesInTheTopDirectoryNewestFirst(): void
+    {
+        $storage = new ImageStorage(new ImageInspector());
+        $older   = $storage->store($this->directory, 'older.png', $this->png());
+        $newer   = $storage->store($this->directory, 'newer.png', $this->png());
+        touch($this->directory.'/'.$older->name, time() - 120);
+        touch($this->directory.'/'.$newer->name, time());
+        file_put_contents($this->directory.'/notes.txt', 'not an image');
+        mkdir($this->directory.'/nested');
+        file_put_contents($this->directory.'/nested/hidden.png', $this->png());
+
+        $page = (new ImageLibrary(new ImageInspector()))->listImages($this->directory, 1, 24);
+
+        $this->assertSame(2, $page['total']);
+        $this->assertSame([$newer->name, $older->name], array_map(static fn (ListedImage $image): string => $image->name, $page['images']));
+    }
+
+    public function testRejectsAFileThatIsNotAnImage(): void
+    {
+        $this->expectException(ImageRejectedException::class);
+
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'photo.jpg', 'not an image');
+    }
+
+    private function png(): string
+    {
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);
+        $this->assertIsString($png);
+
+        return $png;
+    }
+}

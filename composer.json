@@ -44,6 +44,7 @@
     "unit": "../../bin/phpunit -d memory_limit=2048M --configuration phpunit.xml --fail-on-warning --testsuite=unit",
     "functional": "cd ../.. && APP_ENV=test APP_DEBUG=0 KERNEL_CLASS=AppTestKernel bin/phpunit -d memory_limit=2G -c plugins/LeuchtfeuerMediaAssetsBasicBundle/phpunit.xml --testsuite functional",
     "coverage": "../../bin/phpunit -d memory_limit=2048M --configuration phpunit.xml --fail-on-warning --coverage-text --coverage-html=Tests/Coverage",
+    "e2e": "cd ../.. && bin/codecept run acceptance -c plugins/LeuchtfeuerMediaAssetsBasicBundle/codeception.yml",
     "test": "@phpunit",
     "dod": "bash checkDod.sh",
     "all": [
@@ -51,6 +52,7 @@
       "@fixcs",
       "@phpstan",
       "@phpunit",
+      "@e2e",
       "@dod"
     ]
   },

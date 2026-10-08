@@ -1,0 +1,22 @@
+actor: AcceptanceTester
+path: Acceptance
+modules:
+  enabled:
+    - Asserts
+    - WebDriver:
+        url: "http://127.0.0.1:8080"
+        host: 127.0.0.1
+        browser: chrome
+        port: 4444
+        window_size: maximize
+        capabilities:
+          "goog:chromeOptions":
+            args:
+              - "--ignore-certificate-errors"
+              - "--disable-dev-shm-usage"
+    - Db:
+        dsn: 'mysql:host=%DB_HOST%;port=%DB_PORT%;dbname=%DB_NAME%'
+        user: '%DB_USER%'
+        password: '%DB_PASSWD%'
+        populate: false
+        cleanup: false

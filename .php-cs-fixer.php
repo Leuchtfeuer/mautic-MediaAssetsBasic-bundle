@@ -2,7 +2,7 @@
 
 $finder = (new PhpCsFixer\Finder())
     ->in(__DIR__)
-    ->exclude('vendor')
+    ->exclude(['vendor', 'node_modules', 'Assets'])
     ->append([__DIR__.'/.php-cs-fixer.php']);
 
 return (new PhpCsFixer\Config())

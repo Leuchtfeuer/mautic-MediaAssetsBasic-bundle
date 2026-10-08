@@ -11,6 +11,13 @@ parameters:
 
     excludePaths:
         - vendor/* (?)
+        - node_modules/* (?)
+        # Acceptance tests use the shared Codeception actor, which is not in this plugin.
+        - Tests/Acceptance/*
+        - Tests/Acceptance/Support/*
+        # CI (mautic-ci-runner): copies this neon to the Mautic root, then analyses plugins/<Bundle>.
+        - plugins/*/Tests/Acceptance/*
+        - plugins/*/Tests/Acceptance/Support/*
 
     dynamicConstantNames:
         - MAUTIC_ENV

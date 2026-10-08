@@ -1,0 +1,17 @@
+paths:
+  tests: Tests
+  output: Tests/_output
+  support: ../../tests/_support
+  data: Tests/_data
+actor_suffix: Tester
+extensions:
+  enabled:
+    - Codeception\Extension\RunFailed
+params:
+  - env
+  - env:
+      DB_PORT: 3306
+  - ../../.env.test
+  - ../../.env.test.local
+settings:
+  error_level: "E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED"
