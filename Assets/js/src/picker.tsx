@@ -193,9 +193,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
           {dragging && <div className="lf-media-assets__drop">Drop to upload</div>}
         </div>
         <footer className="lf-media-assets__footer">
-          <label>
-            Items per page
-            {' '}
+          <label className="lf-media-assets__limit">
+            <span>Items per page</span>
             <select value={limit} onChange={(event) => { setPage(1); setLimit(Number(event.target.value)); }}>
               <option value={12}>12</option>
               <option value={24}>24</option>
