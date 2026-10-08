@@ -19,20 +19,38 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 {
     private string $uploadedName = '';
 
+    private int $errorHandlerCountBeforeSetup = 0;
+
+    private int $exceptionHandlerCountBeforeSetup = 0;
+
+    protected function setUp(): void
+    {
+        $this->errorHandlerCountBeforeSetup     = $this->countErrorHandlers();
+        $this->exceptionHandlerCountBeforeSetup = $this->countExceptionHandlers();
+
+        parent::setUp();
+    }
+
     protected function beforeTearDown(): void
     {
-        if ('' === $this->uploadedName) {
-            return;
+        if ('' !== $this->uploadedName) {
+            $paths = self::getContainer()->get(PathsHelper::class);
+            $this->assertInstanceOf(PathsHelper::class, $paths);
+            $path = rtrim($paths->getImagePath(), '/').'/'.$this->uploadedName;
+            if (is_file($path)) {
+                unlink($path);
+            }
         }
 
-        $paths = self::getContainer()->get(PathsHelper::class);
-        $this->assertInstanceOf(PathsHelper::class, $paths);
-        $path = rtrim($paths->getImagePath(), '/').'/'.$this->uploadedName;
-        if (is_file($path)) {
-            unlink($path);
+        while ($this->countErrorHandlers() > $this->errorHandlerCountBeforeSetup) {
+            restore_error_handler();
         }
 
-        restore_error_handler();
+        // AbstractMauticTestCase::tearDown() restores one exception handler after this method.
+        $exceptionHandlerTarget = $this->exceptionHandlerCountBeforeSetup + 1;
+        while ($this->countExceptionHandlers() > $exceptionHandlerTarget) {
+            restore_exception_handler();
+        }
     }
 
     public function testUploadAppearsInTheImageList(): void
@@ -120,5 +138,51 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertIsString($png);
 
         return $png;
+    }
+
+    private function countErrorHandlers(): int
+    {
+        $handlers = [];
+
+        while (true) {
+            $previous = set_error_handler(static fn (): false => false);
+            restore_error_handler();
+
+            if (null === $previous) {
+                break;
+            }
+
+            $handlers[] = $previous;
+            restore_error_handler();
+        }
+
+        foreach (array_reverse($handlers) as $handler) {
+            set_error_handler($handler);
+        }
+
+        return count($handlers);
+    }
+
+    private function countExceptionHandlers(): int
+    {
+        $handlers = [];
+
+        while (true) {
+            $previous = set_exception_handler(static fn (): null => null);
+            restore_exception_handler();
+
+            if (null === $previous) {
+                break;
+            }
+
+            $handlers[] = $previous;
+            restore_exception_handler();
+        }
+
+        foreach (array_reverse($handlers) as $handler) {
+            set_exception_handler($handler);
+        }
+
+        return count($handlers);
     }
 }
