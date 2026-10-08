@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { importUrl, listImages, uploadFile } from './api';
 import type { AssetSession, FileProgress, MediaImage, PickerConfig } from './types';
 import './picker.css';
@@ -22,6 +22,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [selected, setSelected] = useState<string | null>(null);
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState('');
+  const urlInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<FileProgress[]>([]);
   const [error, setError] = useState('');
@@ -89,10 +90,21 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
       setTotal(refreshed.total);
       setSelected(image.url);
       setUrl('');
+      setUrlOpen(false);
     } catch (reason: unknown) {
       const message = reason instanceof Error ? reason.message : 'The image could not be imported.';
       setProgress((current) => current.map((row) => (row.id === id ? { ...row, error: message } : row)));
     }
+  }
+
+  useEffect(() => {
+    if (urlOpen) {
+      urlInput.current?.focus();
+    }
+  }, [urlOpen]);
+
+  function onFetch(): void {
+    setUrlOpen((open) => !open);
   }
 
   return (
@@ -101,18 +113,16 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         <header className="lf-media-assets__header">
           <h2>Images</h2>
           <div className="lf-media-assets__actions">
-            <div className="lf-media-assets__split">
-              <button type="button" onClick={() => document.getElementById('lf-media-assets-file')?.click()}>Upload</button>
-              <button type="button" aria-label="Import from URL" onClick={() => setUrlOpen((open) => !open)}>▾</button>
-            </div>
-            <button type="button" className="lf-media-assets__close" onClick={session.close}>Close</button>
+            <button type="button" className="lf-media-assets__fetch" onClick={onFetch}>Fetch</button>
+            <button type="button" onClick={() => document.getElementById('lf-media-assets-file')?.click()}>Upload</button>
+            <button type="button" className="lf-media-assets__close" aria-label="Close" onClick={session.close}>×</button>
           </div>
           <input
             id="lf-media-assets-file"
+            className="lf-media-assets__file"
             type="file"
             accept="image/*"
             multiple
-            hidden
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
               event.target.value = '';
@@ -122,7 +132,17 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         </header>
         {urlOpen && (
           <div className="lf-media-assets__url">
-            <input value={url} placeholder="https://example.com/hero.jpg" onChange={(event) => setUrl(event.target.value)} />
+            <input
+              ref={urlInput}
+              value={url}
+              placeholder="https://example.com/hero.jpg"
+              onChange={(event) => setUrl(event.target.value)}
+              onKeyDown={(event) => {
+                if ('Enter' === event.key && '' !== url.trim()) {
+                  void fetchUrl();
+                }
+              }}
+            />
             <button type="button" onClick={() => void fetchUrl()}>Fetch</button>
           </div>
         )}
