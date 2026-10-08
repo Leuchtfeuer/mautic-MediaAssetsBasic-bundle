@@ -2,7 +2,9 @@
 
 Powerful Media & Assets Manager for organizing and picking images etc. in the Mautic builders.
 
-The media picker is not implemented yet. The plugin can be installed and published.
+## Overview / Purpose / Features
+
+The plugin can be installed and published. The media picker is not implemented yet.
 
 ## Requirements
 
@@ -26,7 +28,7 @@ bin/console cache:clear
 bin/console mautic:plugins:reload
 ```
 
-### Manual installation
+### Manual Installation
 
 1. Copy or clone this repository into `plugins/LeuchtfeuerMediaAssetsBasicBundle`.
 2. Clear the cache: `bin/console cache:clear`
@@ -47,6 +49,10 @@ Nothing to use yet. Publishing the plugin only registers it.
 
 Make sure the plugin is installed and published. If it does not appear after adding the folder, run `bin/console cache:clear` and then `bin/console mautic:plugins:reload`.
 
+## Credits
+
+Leuchtfeuer Digital Marketing GmbH
+
 ## Author
 
 Leuchtfeuer Digital Marketing GmbH
@@ -55,4 +61,4 @@ Please raise issues on GitHub. For everything else, email mautic-plugins@leuchtf
 
 ## License
 
-GPL-3.0-or-later
+This plugin is licensed under the GPL v3 License.
