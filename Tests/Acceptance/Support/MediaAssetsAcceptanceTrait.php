@@ -77,49 +77,179 @@ trait MediaAssetsAcceptanceTrait
         $I->fillField('input[name="page[title]"]', 'Media Assets E2E '.date('YmdHis'));
         $I->waitForJS("return typeof Mautic.launchBuilder === 'function' && Mautic.launchBuilder.toString().includes('builder-active') && document.querySelector('#page_buttons_builder') !== null;", 30);
         $I->waitForJS("return document.querySelector('#page_buttons_builder').disabled === false;", 30);
-        // GrapesJS passes the editor as the second argument of builder:show.
+        $this->launchBuilder($I, '#page_buttons_builder');
+    }
+
+    protected function openEmailBuilder(AcceptanceTester $I): void
+    {
+        $I->amOnPage('/s/emails/new');
+        $I->waitForElementVisible('.email-type-modal .col-md-6:last-child .tile.tile--clickable', AcceptanceTester::TIMEOUT);
+        $I->click('.email-type-modal .col-md-6:last-child .tile.tile--clickable');
+        $I->waitForElementVisible('form[name="emailform"]', AcceptanceTester::TIMEOUT);
+        $I->fillField('input[name="emailform[name]"]', 'Media Assets E2E '.date('YmdHis'));
+        $I->fillField('input[name="emailform[subject]"]', 'Media Assets E2E');
+        $I->waitForJS("return typeof Mautic.setThemeHtml === 'function' && typeof Mautic.launchBuilder === 'function' && Mautic.launchBuilder.toString().includes('builder-active');", 30);
+        // The default email theme is MJML. Reload it once GrapesJS owns setThemeHtml,
+        // so the builder opens the MJML editor rather than the HTML one.
+        $I->executeJS(<<<'JS'
+            const mjml = document.querySelector('textarea.builder-mjml');
+            if (!mjml || mjml.value.indexOf('<mjml') === -1) {
+                const theme = document.querySelector('[name="emailform[template]"]');
+                Mautic.setThemeHtml(theme && theme.value ? theme.value : 'blank');
+            }
+        JS);
+        $I->waitForJS("return !!(document.querySelector('textarea.builder-mjml') && document.querySelector('textarea.builder-mjml').value.indexOf('<mjml') !== -1);", 30);
+        $I->waitForJS("return document.querySelector('#emailform_buttons_builder') !== null && document.querySelector('#emailform_buttons_builder').disabled === false;", 30);
+        $this->launchBuilder($I, '#emailform_buttons_builder');
+    }
+
+    protected function launchBuilder(AcceptanceTester $I, string $button): void
+    {
         $I->executeJS(<<<'JS'
             window.__lfMediaAssetsEditor = null;
             window.mQuery(document).on('builder:show', '.builder', function (_event, editor) {
                 window.__lfMediaAssetsEditor = editor;
             });
         JS);
-        $I->executeJS("document.querySelector('#page_buttons_builder').click();");
+        $I->executeJS('document.querySelector('.json_encode($button).').click();');
         $I->waitForElementVisible('.builder.builder-active', AcceptanceTester::TIMEOUT);
         $I->waitForElementVisible('iframe.gjs-frame', AcceptanceTester::TIMEOUT);
     }
 
     protected function openCustomImagePicker(AcceptanceTester $I): void
     {
-        $I->waitForJS('return window.__lfMediaAssetsBasicInstalled === true && !!(window.LeuchtfeuerMediaAssetsBasic && window.LeuchtfeuerMediaAssetsBasic.listUrl);', 15);
-        $this->openAssetManager($I, '.lf-media-assets');
+        $this->openPicker($I, 'image');
         $I->waitForText('Images', AcceptanceTester::TIMEOUT, '.lf-media-assets');
     }
 
     protected function openBuiltInAssetManager(AcceptanceTester $I): void
     {
         $I->waitForJS('return typeof window.LeuchtfeuerMediaAssetsBasic === "undefined";', 15);
-        $this->openAssetManager($I, '.gjs-am-assets');
+        $this->openPicker($I, 'image', '.gjs-am-assets');
     }
 
-    private function openAssetManager(AcceptanceTester $I, string $readySelector): void
+    protected function openPicker(AcceptanceTester $I, string $kind, string $readySelector = '.lf-media-assets'): void
     {
+        if ('.lf-media-assets' === $readySelector) {
+            $I->waitForJS('return window.__lfMediaAssetsBasicInstalled === true && !!(window.LeuchtfeuerMediaAssetsBasic && window.LeuchtfeuerMediaAssetsBasic.listUrl);', 15);
+        }
         $I->waitForElementVisible('iframe.gjs-frame', AcceptanceTester::TIMEOUT);
-        // A click on the Image block does not insert it (appendOnClick is false).
-        // Double-clicking an image runs the same active handler, which opens the asset manager.
         $I->waitForJS('return !!(window.__lfMediaAssetsEditor && window.__lfMediaAssetsEditor.getWrapper);', 15);
-        $I->executeJS(<<<'JS'
-            const editor = window.__lfMediaAssetsEditor;
-            const wrapper = editor.getWrapper();
-            const existing = wrapper.findType('image')[0];
-            const image = existing || wrapper.append({ type: 'image' })[0];
-            const view = image.getView();
-            if (!view || typeof view.onActive !== 'function') {
-                throw new Error('Image component has no active handler');
-            }
-            view.onActive();
+        $kindJson = json_encode($kind, JSON_THROW_ON_ERROR);
+        // Block clicks do not insert components. These calls are the handlers behind
+        // double-click, an empty image, and the background file buttons.
+        $I->executeJS(<<<JS
+            (() => {
+              const kind = {$kindJson};
+              const editor = window.__lfMediaAssetsEditor;
+              const wrapper = editor.getWrapper();
+
+              const componentOf = (type) => {
+                const found = wrapper.findType(type);
+                if (found && found.length) {
+                  return found[0];
+                }
+                let parent = wrapper;
+                if (type === 'mj-section' || type === 'mj-hero') {
+                  const body = wrapper.findType('mj-body');
+                  if (body && body.length) {
+                    parent = body[0];
+                  }
+                }
+                if (type === 'mj-column') {
+                  parent = componentOf('mj-section');
+                }
+                if (type === 'mj-image') {
+                  const columns = wrapper.findType('mj-column');
+                  parent = columns && columns.length ? columns[0] : componentOf('mj-column');
+                }
+                const created = parent.append({ type });
+                const component = Array.isArray(created) ? created[0] : created;
+                if (!component) {
+                  throw new Error('Could not create ' + type);
+                }
+                return component;
+              };
+
+              const openActive = (type) => {
+                const view = componentOf(type).getView();
+                if (!view || typeof view.onActive !== 'function') {
+                  throw new Error(type + ' has no active handler');
+                }
+                view.onActive();
+              };
+
+              const openStyleFile = (component, propertyName) => {
+                editor.select(component);
+                const sectors = editor.StyleManager.getSectors();
+                const sectorModels = sectors.models || sectors;
+                let foundFile = false;
+                for (let i = 0; i < sectorModels.length; i++) {
+                  if (typeof sectorModels[i].set === 'function') {
+                    sectorModels[i].set('open', true);
+                  }
+                  const properties = sectorModels[i].getProperties();
+                  const propertyModels = properties.models || properties;
+                  for (let j = 0; j < propertyModels.length; j++) {
+                    const children = typeof propertyModels[j].getProperties === 'function' ? propertyModels[j].getProperties() : null;
+                    const candidates = [propertyModels[j]].concat((children && (children.models || children)) || []);
+                    for (let k = 0; k < candidates.length; k++) {
+                      if (candidates[k].get('property') !== propertyName || candidates[k].get('type') !== 'file') {
+                        continue;
+                      }
+                      foundFile = true;
+                      if (candidates[k].view && typeof candidates[k].view.openAssetManager === 'function') {
+                        candidates[k].view.openAssetManager();
+                        return;
+                      }
+                    }
+                  }
+                }
+                if (!foundFile) {
+                  throw new Error('The builder has no ' + propertyName + ' file control');
+                }
+                editor.Assets.open({
+                  types: ['image'],
+                  accept: 'image/*',
+                  select(asset, complete) {
+                    if (complete) {
+                      editor.Assets.close();
+                    }
+                  },
+                });
+              };
+
+              if (kind === 'image' || kind === 'mj-image') {
+                openActive(kind);
+                return;
+              }
+              if (kind === 'page-background') {
+                const sections = wrapper.findType('section');
+                openStyleFile(sections && sections.length ? sections[0] : wrapper, 'background-image');
+                return;
+              }
+              if (kind === 'mj-section' || kind === 'mj-hero') {
+                openStyleFile(componentOf(kind), 'background-url');
+                return;
+              }
+              throw new Error('Unknown picker path ' + kind);
+            })();
         JS);
         $I->waitForElementVisible($readySelector, AcceptanceTester::TIMEOUT);
+    }
+
+    protected function seeCustomPicker(AcceptanceTester $I): void
+    {
+        $I->waitForElementVisible('.lf-media-assets', AcceptanceTester::TIMEOUT);
+        $I->dontSeeElement('.gjs-am-assets');
+        $I->see('Fetch', '.lf-media-assets__header');
+        $I->see('Upload', '.lf-media-assets__header');
+    }
+
+    protected function closeCustomPicker(AcceptanceTester $I): void
+    {
+        $I->click('.lf-media-assets__close');
+        $I->waitForElementNotVisible('.lf-media-assets', AcceptanceTester::TIMEOUT);
     }
 
     private function ensureIntegration(
