@@ -17,7 +17,8 @@ use Symfony\Component\HttpFoundation\Session\SessionInterface;
 
 final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 {
-    private string $uploadedName = '';
+    /** @var list<string> */
+    private array $uploadedNames = [];
 
     private int $errorHandlerCountBeforeSetup = 0;
 
@@ -33,12 +34,15 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 
     protected function beforeTearDown(): void
     {
-        if ('' !== $this->uploadedName) {
+        if ([] !== $this->uploadedNames) {
             $paths = self::getContainer()->get(PathsHelper::class);
             $this->assertInstanceOf(PathsHelper::class, $paths);
-            $path = rtrim($paths->getImagePath(), '/').'/'.$this->uploadedName;
-            if (is_file($path)) {
-                unlink($path);
+            $directory = rtrim($paths->getImagePath(), '/');
+            foreach ($this->uploadedNames as $name) {
+                $path = $directory.'/'.$name;
+                if (is_file($path)) {
+                    unlink($path);
+                }
             }
         }
 
@@ -85,7 +89,7 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertIsArray($image);
         $name = $image['name'] ?? null;
         $this->assertIsString($name);
-        $this->uploadedName = $name;
+        $this->uploadedNames[] = $name;
 
         $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images?limit=50');
         $list = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -94,7 +98,132 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $images = $list['images'] ?? null;
         $this->assertIsArray($images);
         $names = array_column($images, 'name');
-        $this->assertContains($this->uploadedName, $names);
+        $this->assertContains($name, $names);
+    }
+
+    public function testUnpublishedPluginRejectsTheImageEndpoints(): void
+    {
+        $this->setPublished(false);
+
+        $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images');
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_FORBIDDEN, 'Media & Assets (Basic) is not published.');
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/import',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['url' => 'https://example.com/hero.png'], JSON_THROW_ON_ERROR),
+        );
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_FORBIDDEN, 'Media & Assets (Basic) is not published.');
+    }
+
+    public function testUploadRejectsAFileThatIsNotAnImage(): void
+    {
+        $this->publishPlugin();
+
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, 'not an image');
+        $file = new UploadedFile($path, 'notes.txt', 'text/plain', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            [],
+            ['files' => [$file]],
+            $this->ajaxHeaders(),
+        );
+
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertFalse($first['ok'] ?? null);
+        $this->assertSame('Only JPEG, PNG, GIF and WebP images are allowed.', $first['error'] ?? null);
+    }
+
+    public function testASecondUploadOfTheSameNameGetsASuffix(): void
+    {
+        $this->publishPlugin();
+
+        $stem   = 'lfmedia'.bin2hex(random_bytes(4));
+        $first  = $this->uploadPng($stem.'.png');
+        $second = $this->uploadPng($stem.'.png');
+
+        $this->assertSame($stem.'.png', $first);
+        $this->assertSame($stem.'-1.png', $second);
+    }
+
+    public function testImportRequiresAUrl(): void
+    {
+        $this->publishPlugin();
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/import',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['url' => ''], JSON_THROW_ON_ERROR),
+        );
+
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_BAD_REQUEST, 'Enter an image URL.');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function ajaxHeaders(): array
+    {
+        return [
+            'HTTP_X-Requested-With' => 'XMLHttpRequest',
+            'HTTP_X-CSRF-Token'     => $this->ajaxCsrfToken(),
+        ];
+    }
+
+    private function assertRejected(string $content, int $status, string $message): void
+    {
+        $payload = json_decode($content, true);
+        $this->assertResponseStatusCodeSame($status);
+        $this->assertIsArray($payload);
+        $this->assertSame($message, $payload['error'] ?? null);
+    }
+
+    private function uploadPng(string $filename): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, $this->png());
+        $file = new UploadedFile($path, $filename, 'image/png', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            [],
+            ['files' => [$file]],
+            $this->ajaxHeaders(),
+        );
+
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertTrue($first['ok'] ?? null, (string) json_encode($first));
+        $image = $first['image'] ?? null;
+        $this->assertIsArray($image);
+        $name = $image['name'] ?? null;
+        $this->assertIsString($name);
+        $this->uploadedNames[] = $name;
+
+        return $name;
     }
 
     private function ajaxCsrfToken(): string
@@ -119,6 +248,25 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 
     private function publishPlugin(): void
     {
+        $this->setPublished(true);
+    }
+
+    private function setPublished(bool $published): void
+    {
+        $existing = $this->em->getRepository(Integration::class)->findOneBy([
+            'name' => LeuchtfeuerMediaAssetsBasicIntegration::NAME,
+        ]);
+        if ($existing instanceof Integration) {
+            $existing->setIsPublished($published);
+            $this->em->flush();
+
+            return;
+        }
+
+        if (!$published) {
+            return;
+        }
+
         $plugin = new Plugin();
         $plugin->setName('Media & Assets (Basic) by Leuchtfeuer');
         $plugin->setBundle('LeuchtfeuerMediaAssetsBasicBundle');
