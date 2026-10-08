@@ -19,12 +19,17 @@ final class ImageInspector
 
     public function inspectFile(string $path): InspectedImage
     {
-        $contents = file_get_contents($path);
-        if (false === $contents) {
-            throw new ImageRejectedException('The file could not be read.');
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($path);
+        if (!is_string($mime) || !isset(self::EXTENSIONS[$mime])) {
+            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
         }
 
-        return $this->inspectContents($contents);
+        $size = @getimagesize($path);
+        if (false === $size) {
+            throw new ImageRejectedException('Only JPEG, PNG, GIF and WebP images are allowed.');
+        }
+
+        return new InspectedImage($mime, self::EXTENSIONS[$mime], (int) $size[0], (int) $size[1]);
     }
 
     public function inspectContents(string $contents): InspectedImage

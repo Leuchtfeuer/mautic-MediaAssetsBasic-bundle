@@ -54,6 +54,27 @@ final class ImageLibraryTest extends TestCase
         $this->assertSame([$newer->name, $older->name], array_map(static fn (ListedImage $image): string => $image->name, $page['images']));
     }
 
+    public function testReturnsOnlyTheRequestedPageOfValidImages(): void
+    {
+        $storage = new ImageStorage(new ImageInspector());
+        $oldest  = $storage->store($this->directory, 'oldest.png', $this->png());
+        $middle  = $storage->store($this->directory, 'middle.png', $this->png());
+        $newest  = $storage->store($this->directory, 'newest.png', $this->png());
+        touch($this->directory.'/'.$oldest->name, time() - 180);
+        touch($this->directory.'/'.$middle->name, time() - 60);
+        touch($this->directory.'/'.$newest->name, time());
+        file_put_contents($this->directory.'/notes.txt', 'not an image');
+
+        $library = new ImageLibrary(new ImageInspector());
+        $first   = $library->listImages($this->directory, 1, 2);
+        $second  = $library->listImages($this->directory, 2, 2);
+
+        $this->assertSame(3, $first['total']);
+        $this->assertSame([$newest->name, $middle->name], array_map(static fn (ListedImage $image): string => $image->name, $first['images']));
+        $this->assertSame(3, $second['total']);
+        $this->assertSame([$oldest->name], array_map(static fn (ListedImage $image): string => $image->name, $second['images']));
+    }
+
     public function testRejectsAFileThatIsNotAnImage(): void
     {
         $this->expectException(ImageRejectedException::class);

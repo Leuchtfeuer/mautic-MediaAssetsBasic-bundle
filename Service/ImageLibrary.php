@@ -29,6 +29,8 @@ final readonly class ImageLibrary
         $finder->files()->in($directory)->depth('== 0')->sortByModifiedTime()->reverseSorting();
 
         $images = [];
+        $total  = 0;
+        $offset = ($page - 1) * $limit;
         foreach ($finder as $file) {
             try {
                 $inspected = $this->inspector->inspectFile($file->getPathname());
@@ -41,19 +43,20 @@ final readonly class ImageLibrary
                 continue;
             }
 
-            $images[] = new ListedImage(
-                $file->getFilename(),
-                $inspected->width,
-                $inspected->height,
-                $bytes,
-            );
+            if ($total >= $offset && count($images) < $limit) {
+                $images[] = new ListedImage(
+                    $file->getFilename(),
+                    $inspected->width,
+                    $inspected->height,
+                    $bytes,
+                );
+            }
+
+            ++$total;
         }
 
-        $total  = count($images);
-        $offset = ($page - 1) * $limit;
-
         return [
-            'images' => array_slice($images, $offset, $limit),
+            'images' => $images,
             'total'  => $total,
         ];
     }
