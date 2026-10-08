@@ -1,0 +1,48 @@
+{
+  "name": "leuchtfeuer/mautic-media-assets-basic-bundle",
+  "description": "Skeleton for a Mautic 7 media assets plugin.",
+  "type": "mautic-plugin",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["mautic", "plugin", "media", "assets"],
+  "authors": [
+    {
+      "name": "Leuchtfeuer Digital Marketing GmbH",
+      "email": "mautic-plugins@Leuchtfeuer.com",
+      "homepage": "https://www.Leuchtfeuer.com"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "mautic/core-lib": "^7.0"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.4",
+    "phpstan/phpstan": "^2.0",
+    "phpunit/phpunit": "^10.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\": ""
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\Tests\\": "Tests"
+    }
+  },
+  "extra": {
+    "install-directory-name": "LeuchtfeuerMediaAssetsBasicBundle"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "test": "cd ../.. && APP_ENV=test APP_DEBUG=0 KERNEL_CLASS=AppTestKernel bin/phpunit -d memory_limit=2G -c plugins/LeuchtfeuerMediaAssetsBasicBundle/phpunit.xml",
+    "phpstan": "../../bin/phpstan analyse . --memory-limit=1G -c phpstan.neon",
+    "cs": "../../bin/php-cs-fixer fix --config .php-cs-fixer.php -v --dry-run --diff"
+  },
+  "config": {
+    "allow-plugins": {
+      "phpstan/extension-installer": true
+    }
+  }
+}

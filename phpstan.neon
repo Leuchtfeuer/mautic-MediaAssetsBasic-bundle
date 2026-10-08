@@ -1,0 +1,18 @@
+parameters:
+    level: 6
+    tmpDir: .phpstan-cache
+    reportUnmatchedIgnoredErrors: false
+
+    bootstrapFiles:
+        - phpstan-bootstrap.php
+
+    paths:
+        - .
+
+    excludePaths:
+        - vendor/* (?)
+
+    dynamicConstantNames:
+        - MAUTIC_ENV
+        - MAUTIC_TABLE_PREFIX
+        - MAUTIC_VERSION
