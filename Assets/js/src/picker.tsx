@@ -113,7 +113,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         <header className="lf-media-assets__header">
           <h2>Images</h2>
           <div className="lf-media-assets__actions">
-            <button type="button" className="lf-media-assets__fetch" onClick={onFetch}>Fetch</button>
+            <button type="button" className="lf-media-assets__fetch" onClick={onFetch}>Import from URL</button>
             <button type="button" onClick={() => document.getElementById('lf-media-assets-file')?.click()}>Upload</button>
             <button type="button" className="lf-media-assets__close" aria-label="Close" onClick={session.close}>×</button>
           </div>

@@ -242,7 +242,7 @@ trait MediaAssetsAcceptanceTrait
     {
         $I->waitForElementVisible('.lf-media-assets', AcceptanceTester::TIMEOUT);
         $I->dontSeeElement('.gjs-am-assets');
-        $I->see('Fetch', '.lf-media-assets__header');
+        $I->see('Import from URL', '.lf-media-assets__header');
         $I->see('Upload', '.lf-media-assets__header');
     }
 

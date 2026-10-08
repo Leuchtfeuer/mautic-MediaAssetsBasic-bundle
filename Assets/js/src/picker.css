@@ -64,6 +64,7 @@
   font-family: inherit;
   font-size: 14px;
   line-height: 30px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
