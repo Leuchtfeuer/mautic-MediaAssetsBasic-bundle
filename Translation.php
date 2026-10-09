@@ -74,29 +74,53 @@ final class Translation
 
     public const ERROR_UNPUBLISHED = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.unpublished';
 
+    public const ERROR_PATH = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.path';
+
+    public const ERROR_FOLDER_NAME = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.folder_name';
+
+    public const ERROR_FOLDER_EXISTS = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.folder_exists';
+
+    public const FOLDERS = 'mautic.plugin.leuchtfeuermediaassetsbasic.folders';
+
+    public const HOME = 'mautic.plugin.leuchtfeuermediaassetsbasic.home';
+
+    public const NEW_FOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.new_folder';
+
+    public const FOLDER_NAME_PLACEHOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.folder_name_placeholder';
+
+    public const CREATE_FOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.create_folder';
+
+    public const FOLDER_CREATE_FAILED = 'mautic.plugin.leuchtfeuermediaassetsbasic.folder_create_failed';
+
     /**
      * @return array<string, string>
      */
     public static function picker(): array
     {
         return [
-            'images'         => self::IMAGES,
-            'importFromUrl'  => self::IMPORT_FROM_URL,
-            'upload'         => self::UPLOAD,
-            'close'          => self::CLOSE,
-            'fetch'          => self::FETCH,
-            'urlPlaceholder' => self::URL_PLACEHOLDER,
-            'loadFailed'     => self::LOAD_FAILED,
-            'importFailed'   => self::IMPORT_FAILED,
-            'empty'          => self::EMPTY,
-            'drop'           => self::DROP,
-            'itemsPerPage'   => self::ITEMS_PER_PAGE,
-            'range'          => self::RANGE,
-            'page'           => self::PAGE,
-            'byte'           => self::BYTE,
-            'kilobyte'       => self::KILOBYTE,
-            'megabyte'       => self::MEGABYTE,
-            'uploadFailed'   => self::ERROR_UPLOAD,
+            'images'                => self::IMAGES,
+            'importFromUrl'         => self::IMPORT_FROM_URL,
+            'upload'                => self::UPLOAD,
+            'close'                 => self::CLOSE,
+            'fetch'                 => self::FETCH,
+            'urlPlaceholder'        => self::URL_PLACEHOLDER,
+            'loadFailed'            => self::LOAD_FAILED,
+            'importFailed'          => self::IMPORT_FAILED,
+            'empty'                 => self::EMPTY,
+            'drop'                  => self::DROP,
+            'itemsPerPage'          => self::ITEMS_PER_PAGE,
+            'range'                 => self::RANGE,
+            'page'                  => self::PAGE,
+            'byte'                  => self::BYTE,
+            'kilobyte'              => self::KILOBYTE,
+            'megabyte'              => self::MEGABYTE,
+            'uploadFailed'          => self::ERROR_UPLOAD,
+            'folders'               => self::FOLDERS,
+            'home'                  => self::HOME,
+            'newFolder'             => self::NEW_FOLDER,
+            'folderNamePlaceholder' => self::FOLDER_NAME_PLACEHOLDER,
+            'createFolder'          => self::CREATE_FOLDER,
+            'folderCreateFailed'    => self::FOLDER_CREATE_FAILED,
         ];
     }
 }

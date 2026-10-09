@@ -27,7 +27,7 @@ final readonly class UrlImageImporter
     ) {
     }
 
-    public function import(string $directory, string $url): ListedImage
+    public function import(string $directory, string $url, string $relativeDirectory = ''): ListedImage
     {
         $current = trim($url);
         $max     = IniSize::toBytes(IniSize::uploadMaxFilesize());
@@ -45,7 +45,7 @@ final readonly class UrlImageImporter
 
             $name = $this->nameFromUrl($current);
 
-            return $this->storage->store($directory, $name, $response['body']);
+            return $this->storage->store($directory, $name, $response['body'], $relativeDirectory);
         }
 
         throw new ImageRejectedException(Translation::ERROR_REDIRECTS);

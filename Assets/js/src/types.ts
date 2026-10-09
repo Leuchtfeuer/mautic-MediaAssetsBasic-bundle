@@ -1,9 +1,17 @@
 export interface MediaImage {
   name: string;
+  path: string;
   url: string;
   width: number;
   height: number;
   bytes: number;
+}
+
+export interface FolderNode {
+  name: string;
+  path: string;
+  count: number;
+  children: FolderNode[];
 }
 
 export interface PickerMessages {
@@ -24,12 +32,20 @@ export interface PickerMessages {
   kilobyte: string;
   megabyte: string;
   uploadFailed: string;
+  folders: string;
+  home: string;
+  newFolder: string;
+  folderNamePlaceholder: string;
+  createFolder: string;
+  folderCreateFailed: string;
 }
 
 export interface PickerConfig {
   listUrl: string;
   uploadUrl: string;
   importUrl: string;
+  foldersUrl: string;
+  createFolderUrl: string;
   messages?: Partial<PickerMessages>;
 }
 

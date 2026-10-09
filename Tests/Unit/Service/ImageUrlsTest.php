@@ -28,6 +28,16 @@ final class ImageUrlsTest extends TestCase
         $this->assertSame('https://site.example/media/images/hero.png', $urls->publicUrl('hero.png'));
     }
 
+    public function testEncodesEachFolderSegment(): void
+    {
+        $urls = $this->urls('https://cdn.example', '');
+
+        $this->assertSame(
+            'https://cdn.example/media/images/Brand/Campaign%202026/hero.png',
+            $urls->publicUrl('Brand/Campaign 2026/hero.png'),
+        );
+    }
+
     private function urls(string $staticUrl, string $siteUrl): ImageUrls
     {
         $paths = $this->createMock(PathsHelper::class);

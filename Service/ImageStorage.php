@@ -17,7 +17,7 @@ final readonly class ImageStorage
     {
     }
 
-    public function store(string $directory, string $originalName, string $contents): ListedImage
+    public function store(string $directory, string $originalName, string $contents, string $relativeDirectory = ''): ListedImage
     {
         $inspected = $this->inspector->inspectContents($contents);
         $this->ensureDirectory($directory);
@@ -28,10 +28,16 @@ final readonly class ImageStorage
             throw new ImageRejectedException(Translation::ERROR_STORE);
         }
 
-        return new ListedImage($name, $inspected->width, $inspected->height, strlen($contents));
+        return new ListedImage(
+            $name,
+            $inspected->width,
+            $inspected->height,
+            strlen($contents),
+            '' === $relativeDirectory ? $name : $relativeDirectory.'/'.$name,
+        );
     }
 
-    public function storeUploaded(string $directory, UploadedFile $file): ListedImage
+    public function storeUploaded(string $directory, UploadedFile $file, string $relativeDirectory = ''): ListedImage
     {
         $inspected = $this->inspector->inspectFile($file->getPathname());
         $this->ensureDirectory($directory);
@@ -45,7 +51,13 @@ final readonly class ImageStorage
 
         $bytes = $moved->getSize();
 
-        return new ListedImage($name, $inspected->width, $inspected->height, false === $bytes ? 0 : $bytes);
+        return new ListedImage(
+            $name,
+            $inspected->width,
+            $inspected->height,
+            false === $bytes ? 0 : $bytes,
+            '' === $relativeDirectory ? $name : $relativeDirectory.'/'.$name,
+        );
     }
 
     private function ensureDirectory(string $directory): void

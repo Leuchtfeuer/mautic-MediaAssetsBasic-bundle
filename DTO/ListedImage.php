@@ -11,16 +11,18 @@ final readonly class ListedImage
         public int $width,
         public int $height,
         public int $bytes,
+        public string $path = '',
     ) {
     }
 
     /**
-     * @return array{name: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, width: int, height: int, bytes: int}
      */
     public function toArray(): array
     {
         return [
             'name'   => $this->name,
+            'path'   => '' !== $this->path ? $this->path : $this->name,
             'width'  => $this->width,
             'height' => $this->height,
             'bytes'  => $this->bytes,

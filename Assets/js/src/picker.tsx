@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { importUrl, listImages, uploadFile } from './api';
-import type { AssetSession, FileProgress, MediaImage, PickerConfig, PickerMessages } from './types';
+import { createFolder, importUrl, listFolders, listImages, uploadFile } from './api';
+import type { AssetSession, FileProgress, FolderNode, MediaImage, PickerConfig, PickerMessages } from './types';
 import './picker.css';
 
 const fallbackMessages: PickerMessages = {
@@ -21,6 +21,12 @@ const fallbackMessages: PickerMessages = {
   kilobyte: 'KB',
   megabyte: 'MB',
   uploadFailed: 'The file could not be uploaded.',
+  folders: 'Folders',
+  home: 'Home',
+  newFolder: 'New folder',
+  folderNamePlaceholder: 'Folder name',
+  createFolder: 'Create',
+  folderCreateFailed: 'The folder could not be created.',
 };
 
 function text(config: PickerConfig): PickerMessages {
@@ -45,8 +51,50 @@ function formatBytes(bytes: number, messages: PickerMessages): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} ${messages.megabyte}`;
 }
 
+function breadcrumb(path: string, home: string): string[] {
+  if ('' === path) {
+    return [home];
+  }
+
+  return [home, ...path.split('/')];
+}
+
+function FolderRows({
+  node,
+  depth,
+  selected,
+  onSelect,
+}: {
+  node: FolderNode;
+  depth: number;
+  selected: string;
+  onSelect: (path: string) => void;
+}): JSX.Element {
+  return (
+    <>
+      <button
+        type="button"
+        className={selected === node.path ? 'lf-media-assets__folder is-selected' : 'lf-media-assets__folder'}
+        style={{ paddingLeft: `${12 + depth * 16}px` }}
+        onClick={() => onSelect(node.path)}
+      >
+        <span className="lf-media-assets__folder-label">
+          <span className="lf-media-assets__folder-icon" aria-hidden="true" />
+          <span>{node.name}</span>
+        </span>
+        <span className="lf-media-assets__folder-count">{node.count}</span>
+      </button>
+      {node.children.map((child) => (
+        <FolderRows key={child.path} node={child} depth={depth + 1} selected={selected} onSelect={onSelect} />
+      ))}
+    </>
+  );
+}
+
 export function Picker({ config, session }: { config: PickerConfig; session: AssetSession }): JSX.Element {
   const messages = text(config);
+  const [folder, setFolder] = useState<FolderNode | null>(null);
+  const [path, setPath] = useState('');
   const [images, setImages] = useState<MediaImage[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -55,13 +103,37 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState('');
   const urlInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<FileProgress[]>([]);
   const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [folderError, setFolderError] = useState('');
+  const [treeVersion, setTreeVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
-    listImages(config, page, limit)
+    listFolders(config)
+      .then((tree) => {
+        if (active) {
+          setFolder(tree);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setError(reason instanceof Error ? reason.message : messages.loadFailed);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [config, treeVersion, messages.loadFailed]);
+
+  useEffect(() => {
+    let active = true;
+    listImages(config, page, limit, path)
       .then((result) => {
         if (!active) {
           return;
@@ -79,11 +151,21 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     return () => {
       active = false;
     };
-  }, [config, page, limit]);
+  }, [config, page, limit, path, messages.loadFailed]);
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
+  const crumbs = breadcrumb(path, messages.home);
+
+  async function refreshImages(nextPage = 1): Promise<MediaImage[]> {
+    setPage(nextPage);
+    const refreshed = await listImages(config, nextPage, limit, path);
+    setImages(refreshed.images);
+    setTotal(refreshed.total);
+
+    return refreshed.images;
+  }
 
   async function sendFiles(files: File[]): Promise<void> {
     const rows = files.map((file) => ({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, progress: 0 }));
@@ -91,7 +173,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     const stored: MediaImage[] = [];
     for (const file of files) {
       const id = `${file.name}-${file.size}-${file.lastModified}`;
-      const result = await uploadFile(config, file, (value) => {
+      const result = await uploadFile(config, file, path, (value) => {
         setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: value } : row)));
       });
       setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: result.error } : row)));
@@ -100,10 +182,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
       }
     }
     if (stored.length > 0) {
-      setPage(1);
-      const refreshed = await listImages(config, 1, limit);
-      setImages(refreshed.images);
-      setTotal(refreshed.total);
+      await refreshImages(1);
+      setTreeVersion((value) => value + 1);
       if (stored.length === 1) {
         setSelected(stored[0].url);
       }
@@ -114,12 +194,10 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     const id = `url-${url}`;
     setProgress((current) => [...current, { id, name: url, progress: 0.4 }]);
     try {
-      const image = await importUrl(config, url);
+      const image = await importUrl(config, url, path);
       setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1 } : row)));
-      setPage(1);
-      const refreshed = await listImages(config, 1, limit);
-      setImages(refreshed.images);
-      setTotal(refreshed.total);
+      await refreshImages(1);
+      setTreeVersion((value) => value + 1);
       setSelected(image.url);
       setUrl('');
       setUrlOpen(false);
@@ -129,14 +207,44 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     }
   }
 
+  async function submitFolder(): Promise<void> {
+    if ('' === folderName.trim()) {
+      setFolderError(messages.folderNamePlaceholder);
+      return;
+    }
+    try {
+      const created = await createFolder(config, path, folderName.trim());
+      setFolderName('');
+      setCreating(false);
+      setFolderError('');
+      setTreeVersion((value) => value + 1);
+      setPath(created.path);
+      setPage(1);
+    } catch (reason: unknown) {
+      setFolderError(reason instanceof Error ? reason.message : messages.folderCreateFailed);
+    }
+  }
+
   useEffect(() => {
     if (urlOpen) {
       urlInput.current?.focus();
     }
   }, [urlOpen]);
 
+  useEffect(() => {
+    if (creating) {
+      folderInput.current?.focus();
+    }
+  }, [creating]);
+
   function onFetch(): void {
     setUrlOpen((open) => !open);
+  }
+
+  function selectFolder(next: string): void {
+    setPath(next);
+    setPage(1);
+    setSelected(null);
   }
 
   return (
@@ -190,39 +298,90 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
             ))}
           </div>
         )}
-        <div
-          className="lf-media-assets__body"
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragging(false);
-            void sendFiles(Array.from(event.dataTransfer.files));
-          }}
-        >
-          {error && <p className="lf-media-assets__error">{error}</p>}
-          {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
-          <div className="lf-media-assets__grid">
-            {images.map((image) => (
+        <div className="lf-media-assets__main">
+          <aside className="lf-media-assets__sidebar">
+            <div className="lf-media-assets__folders-head">
+              <span>{messages.folders}</span>
               <button
                 type="button"
-                key={image.url}
-                className={selected === image.url ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
-                onClick={() => setSelected(image.url)}
-                onDoubleClick={() => session.select(image.url)}
+                className="lf-media-assets__folder-add"
+                aria-label={messages.newFolder}
+                onClick={() => {
+                  setCreating(true);
+                  setFolderError('');
+                }}
               >
-                <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
-                <span className="lf-media-assets__meta">
-                  {image.name}
-                  <small>{`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}</small>
-                </span>
+                +
               </button>
-            ))}
+            </div>
+            {creating && (
+              <div className="lf-media-assets__folder-create">
+                <input
+                  ref={folderInput}
+                  value={folderName}
+                  placeholder={messages.folderNamePlaceholder}
+                  onChange={(event) => setFolderName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ('Enter' === event.key) {
+                      void submitFolder();
+                    }
+                    if ('Escape' === event.key) {
+                      setCreating(false);
+                      setFolderName('');
+                      setFolderError('');
+                    }
+                  }}
+                />
+                <button type="button" onClick={() => void submitFolder()}>{messages.createFolder}</button>
+                {folderError && <div className="lf-media-assets__error">{folderError}</div>}
+              </div>
+            )}
+            <div className="lf-media-assets__folders">
+              {folder && <FolderRows node={folder} depth={0} selected={path} onSelect={selectFolder} />}
+            </div>
+          </aside>
+          <div
+            className="lf-media-assets__body"
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              void sendFiles(Array.from(event.dataTransfer.files));
+            }}
+          >
+            <div className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
+              {crumbs.map((crumb, index) => (
+                <span key={`${crumb}-${index}`}>
+                  {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
+                  <span className={index === crumbs.length - 1 ? 'is-current' : undefined}>{crumb}</span>
+                </span>
+              ))}
+            </div>
+            {error && <p className="lf-media-assets__error">{error}</p>}
+            {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
+            <div className="lf-media-assets__grid">
+              {images.map((image) => (
+                <button
+                  type="button"
+                  key={image.url}
+                  className={selected === image.url ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                  onClick={() => setSelected(image.url)}
+                  onDoubleClick={() => session.select(image.url)}
+                >
+                  <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
+                  <span className="lf-media-assets__meta">
+                    {image.name}
+                    <small>{`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+            {dragging && <div className="lf-media-assets__drop">{messages.drop}</div>}
           </div>
-          {dragging && <div className="lf-media-assets__drop">{messages.drop}</div>}
         </div>
         <footer className="lf-media-assets__footer">
           <label className="lf-media-assets__limit">

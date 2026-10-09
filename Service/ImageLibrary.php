@@ -17,7 +17,7 @@ final readonly class ImageLibrary
     /**
      * @return array{images: list<ListedImage>, total: int}
      */
-    public function listImages(string $directory, int $page, int $limit): array
+    public function listImages(string $directory, int $page, int $limit, string $relativeDirectory = ''): array
     {
         $page  = max(1, $page);
         $limit = max(1, $limit);
@@ -44,11 +44,14 @@ final readonly class ImageLibrary
             }
 
             if ($total >= $offset && count($images) < $limit) {
+                $name     = $file->getFilename();
+                $path     = '' === $relativeDirectory ? $name : $relativeDirectory.'/'.$name;
                 $images[] = new ListedImage(
-                    $file->getFilename(),
+                    $name,
                     $inspected->width,
                     $inspected->height,
                     $bytes,
+                    $path,
                 );
             }
 

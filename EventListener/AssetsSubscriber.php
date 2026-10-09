@@ -54,10 +54,12 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
         }
 
         $config = [
-            'listUrl'   => $this->router->generate('leuchtfeuer_media_assets_basic_image_list'),
-            'uploadUrl' => $this->router->generate('leuchtfeuer_media_assets_basic_image_upload'),
-            'importUrl' => $this->router->generate('leuchtfeuer_media_assets_basic_image_import'),
-            'messages'  => $messages,
+            'listUrl'          => $this->router->generate('leuchtfeuer_media_assets_basic_image_list'),
+            'uploadUrl'        => $this->router->generate('leuchtfeuer_media_assets_basic_image_upload'),
+            'importUrl'        => $this->router->generate('leuchtfeuer_media_assets_basic_image_import'),
+            'foldersUrl'       => $this->router->generate('leuchtfeuer_media_assets_basic_folder_list'),
+            'createFolderUrl'  => $this->router->generate('leuchtfeuer_media_assets_basic_folder_create'),
+            'messages'         => $messages,
         ];
 
         $assetsEvent->addScriptDeclaration(

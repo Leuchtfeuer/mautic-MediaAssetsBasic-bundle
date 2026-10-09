@@ -1,8 +1,9 @@
-import type { MediaImage, PickerConfig } from './types';
+import type { FolderNode, MediaImage, PickerConfig } from './types';
 
 interface ListResponse {
   images: MediaImage[];
   total: number;
+  path?: string;
 }
 
 interface UploadResponse {
@@ -28,10 +29,13 @@ function headers(json = false): Headers {
   return result;
 }
 
-export async function listImages(config: PickerConfig, page: number, limit: number): Promise<ListResponse> {
+export async function listImages(config: PickerConfig, page: number, limit: number, path: string): Promise<ListResponse> {
   const url = new URL(config.listUrl, window.location.origin);
   url.searchParams.set('page', String(page));
   url.searchParams.set('limit', String(limit));
+  if ('' !== path) {
+    url.searchParams.set('path', path);
+  }
   const response = await fetch(url.toString(), { headers: headers() });
   if (!response.ok) {
     throw new Error(config.messages?.loadFailed ?? 'Images could not be loaded.');
@@ -40,14 +44,40 @@ export async function listImages(config: PickerConfig, page: number, limit: numb
   return response.json() as Promise<ListResponse>;
 }
 
+export async function listFolders(config: PickerConfig): Promise<FolderNode> {
+  const response = await fetch(config.foldersUrl, { headers: headers() });
+  const payload = await response.json() as { folder?: FolderNode; error?: string };
+  if (!response.ok || !payload.folder) {
+    throw new Error(payload.error || config.messages?.loadFailed || 'Images could not be loaded.');
+  }
+
+  return payload.folder;
+}
+
+export async function createFolder(config: PickerConfig, parent: string, name: string): Promise<FolderNode> {
+  const response = await fetch(config.createFolderUrl, {
+    method: 'POST',
+    headers: headers(true),
+    body: JSON.stringify({ parent, name }),
+  });
+  const payload = await response.json() as { folder?: FolderNode; error?: string };
+  if (!response.ok || !payload.folder) {
+    throw new Error(payload.error || config.messages?.folderCreateFailed || 'The folder could not be created.');
+  }
+
+  return payload.folder;
+}
+
 export function uploadFile(
   config: PickerConfig,
   file: File,
+  path: string,
   onProgress: (progress: number) => void,
 ): Promise<{ ok: boolean; error?: string; image?: MediaImage }> {
   return new Promise((resolve) => {
     const body = new FormData();
     body.append('files[]', file);
+    body.append('path', path);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', config.uploadUrl);
     xhr.setRequestHeader('X-CSRF-Token', csrfToken());
@@ -77,11 +107,11 @@ export function uploadFile(
   });
 }
 
-export async function importUrl(config: PickerConfig, url: string): Promise<MediaImage> {
+export async function importUrl(config: PickerConfig, url: string, path: string): Promise<MediaImage> {
   const response = await fetch(config.importUrl, {
     method: 'POST',
     headers: headers(true),
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, path }),
   });
   const payload = await response.json() as { image?: MediaImage; error?: string };
   if (!response.ok || !payload.image) {

@@ -12,6 +12,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\IniSize;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\UrlImageImporter;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -21,28 +22,47 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class ImageController extends AjaxController
 {
-    public function listAction(Request $request, Config $config, ImageLibrary $library, ImageUrls $urls): JsonResponse
+    public function listAction(Request $request, Config $config, ImageLibrary $library, MediaPath $paths, ImageUrls $urls): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
         }
 
+        try {
+            $directory = $paths->resolve($this->queryPath($request));
+        } catch (ImageRejectedException $exception) {
+            return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
+        }
+
         $page   = max(1, $request->query->getInt('page', 1));
         $limit  = min(100, max(1, $request->query->getInt('limit', 24)));
-        $listed = $library->listImages($urls->directory(), $page, $limit);
+        $listed = $library->listImages($directory['absolute'], $page, $limit, $directory['relative']);
 
         return $this->sendJsonResponse([
             'page'   => $page,
             'limit'  => $limit,
+            'path'   => $directory['relative'],
             'total'  => $listed['total'],
             'images' => array_map(fn (ListedImage $image): array => $this->present($image, $urls), $listed['images']),
         ]);
     }
 
-    public function uploadAction(Request $request, Config $config, ImageStorage $storage, ImageUrls $urls): JsonResponse
+    public function uploadAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
+        }
+
+        try {
+            $directory = $paths->resolve($this->requestPath($request));
+        } catch (ImageRejectedException $exception) {
+            return $this->sendJsonResponse([
+                'files' => [[
+                    'ok'    => false,
+                    'name'  => '',
+                    'error' => $this->rejected($exception),
+                ]],
+            ], Response::HTTP_BAD_REQUEST);
         }
 
         $rawLength     = $request->server->get('CONTENT_LENGTH', 0);
@@ -81,7 +101,7 @@ final class ImageController extends AjaxController
             }
 
             try {
-                $image     = $storage->storeUploaded($urls->directory(), $file);
+                $image     = $storage->storeUploaded($directory['absolute'], $file, $directory['relative']);
                 $results[] = ['ok' => true, 'image' => $this->present($image, $urls)];
             } catch (ImageRejectedException $exception) {
                 $results[] = ['ok' => false, 'name' => $name, 'error' => $this->rejected($exception)];
@@ -91,7 +111,7 @@ final class ImageController extends AjaxController
         return $this->sendJsonResponse(['files' => $results]);
     }
 
-    public function importAction(Request $request, Config $config, UrlImageImporter $importer, ImageUrls $urls): JsonResponse
+    public function importAction(Request $request, Config $config, UrlImageImporter $importer, MediaPath $paths, ImageUrls $urls): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -99,12 +119,14 @@ final class ImageController extends AjaxController
 
         $payload = json_decode($request->getContent(), true);
         $url     = is_array($payload) ? ($payload['url'] ?? null) : $request->request->get('url');
+        $path    = is_array($payload) ? ($payload['path'] ?? '') : $request->request->get('path', '');
         if (!is_string($url) || '' === trim($url)) {
             return $this->sendJsonResponse(['error' => $this->translator->trans(Translation::ERROR_URL_REQUIRED)], Response::HTTP_BAD_REQUEST);
         }
 
         try {
-            $image = $importer->import($urls->directory(), trim($url));
+            $directory = $paths->resolve(is_string($path) ? $path : '');
+            $image     = $importer->import($directory['absolute'], trim($url), $directory['relative']);
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
@@ -113,11 +135,27 @@ final class ImageController extends AjaxController
     }
 
     /**
-     * @return array{name: string, url: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, url: string, width: int, height: int, bytes: int}
      */
     private function present(ListedImage $image, ImageUrls $urls): array
     {
-        return $image->toArray() + ['url' => $urls->publicUrl($image->name)];
+        $path = '' !== $image->path ? $image->path : $image->name;
+
+        return $image->toArray() + ['url' => $urls->publicUrl($path)];
+    }
+
+    private function queryPath(Request $request): ?string
+    {
+        $path = $request->query->get('path');
+
+        return is_string($path) ? $path : null;
+    }
+
+    private function requestPath(Request $request): ?string
+    {
+        $path = $request->request->get('path', $request->query->get('path'));
+
+        return is_string($path) ? $path : null;
     }
 
     private function unavailable(): JsonResponse

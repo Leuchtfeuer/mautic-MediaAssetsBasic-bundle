@@ -32,6 +32,8 @@ final class AssetsSubscriberTest extends TestCase
         $this->assertStringContainsString('leuchtfeuer_media_assets_basic_image_list', $event->declarations[0]);
         $this->assertStringContainsString('leuchtfeuer_media_assets_basic_image_upload', $event->declarations[0]);
         $this->assertStringContainsString('leuchtfeuer_media_assets_basic_image_import', $event->declarations[0]);
+        $this->assertStringContainsString('leuchtfeuer_media_assets_basic_folder_list', $event->declarations[0]);
+        $this->assertStringContainsString('leuchtfeuer_media_assets_basic_folder_create', $event->declarations[0]);
         $this->assertStringContainsString('t:'.Translation::IMPORT_FROM_URL, $event->declarations[0]);
     }
 
