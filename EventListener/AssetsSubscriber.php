@@ -38,6 +38,7 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
 
     public function injectAssets(CustomAssetsEvent $assetsEvent): void
     {
+        // isPublished() reads the integration row. Skip that while Mautic itself is still installing and has no database yet.
         if (!$this->installer->checkIfInstalled() || !$this->config->isPublished()) {
             return;
         }
