@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\TransferException;
+use GuzzleHttp\Psr7\Utils;
+use GuzzleHttp\RequestOptions;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use Psr\Http\Message\ResponseInterface;
 
 final readonly class UrlImageImporter
 {
@@ -23,7 +30,7 @@ final readonly class UrlImageImporter
     public function import(string $directory, string $url): ListedImage
     {
         $current = trim($url);
-        $max     = min(8 * 1024 * 1024, IniSize::toBytes(IniSize::uploadMaxFilesize()));
+        $max     = IniSize::toBytes(IniSize::uploadMaxFilesize());
 
         for ($hop = 0; $hop <= self::MAX_REDIRECTS; ++$hop) {
             $addresses = $this->guard->safeAddresses($current);
@@ -54,76 +61,94 @@ final readonly class UrlImageImporter
             throw new ImageRejectedException(Translation::ERROR_SCHEME);
         }
 
-        $host = trim($parts['host'], '[]');
-        $port = isset($parts['port']) ? (int) $parts['port'] : ('https' === strtolower($parts['scheme']) ? 443 : 80);
-
-        $handle = curl_init($url);
-        if (false === $handle) {
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        }
-
-        $body    = '';
-        $headers = '';
-        curl_setopt_array($handle, [
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_HEADER         => false,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-            CURLOPT_TIMEOUT        => self::TIMEOUT_SECONDS,
-            CURLOPT_CONNECTTIMEOUT => self::TIMEOUT_SECONDS,
-            CURLOPT_USERAGENT      => 'Mautic Media Assets',
-            CURLOPT_HEADERFUNCTION => static function (\CurlHandle $curl, string $header) use (&$headers): int {
-                unset($curl);
-                $headers .= $header;
-
-                return strlen($header);
-            },
-            CURLOPT_WRITEFUNCTION => static function (\CurlHandle $curl, string $chunk) use (&$body, $maxBytes): int {
-                unset($curl);
-                $body .= $chunk;
-                if (strlen($body) > $maxBytes) {
-                    return 0;
-                }
-
-                return strlen($chunk);
-            },
+        $host   = trim($parts['host'], '[]');
+        $port   = isset($parts['port']) ? (int) $parts['port'] : ('https' === strtolower($parts['scheme']) ? 443 : 80);
+        $pinned = str_contains($ip, ':') ? '['.$ip.']' : $ip;
+        $client = new Client([
+            RequestOptions::ALLOW_REDIRECTS => false,
+            RequestOptions::CONNECT_TIMEOUT => self::TIMEOUT_SECONDS,
+            RequestOptions::HEADERS         => ['User-Agent' => 'Mautic Media Assets'],
+            RequestOptions::HTTP_ERRORS     => false,
+            RequestOptions::TIMEOUT         => self::TIMEOUT_SECONDS,
         ]);
 
-        $pinned = str_contains($ip, ':') ? '['.$ip.']' : $ip;
-        curl_setopt($handle, CURLOPT_RESOLVE, [$host.':'.$port.':'.$pinned]);
-
-        $ok = curl_exec($handle);
-        if (strlen($body) > $maxBytes) {
-            curl_close($handle);
-            throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
-        }
-
-        if (false === $ok) {
-            $error = curl_errno($handle);
-            curl_close($handle);
-            if (CURLE_OPERATION_TIMEDOUT === $error) {
+        try {
+            $response = $client->request('GET', $url, [
+                RequestOptions::STREAM  => true,
+                'curl'                  => [
+                    CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+                    CURLOPT_RESOLVE   => [$host.':'.$port.':'.$pinned],
+                ],
+            ]);
+        } catch (ConnectException|RequestException $exception) {
+            $errno = $exception->getHandlerContext()['errno'] ?? null;
+            if (CURLE_OPERATION_TIMEDOUT === $errno) {
                 throw new ImageRejectedException(Translation::ERROR_TIMEOUT);
             }
 
             throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        }
-
-        $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
-
-        if ($status >= 300 && $status < 400) {
-            if (1 !== preg_match('/^Location:\s*(\S+)/mi', $headers, $matches)) {
-                throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-            }
-
-            return ['body' => '', 'location' => $matches[1]];
-        }
-
-        if ($status < 200 || $status >= 300) {
+        } catch (TransferException) {
             throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
-        return ['body' => $body, 'location' => null];
+        $status = $response->getStatusCode();
+        if ($status >= 300 && $status < 400) {
+            $location = $response->getHeaderLine('Location');
+            $response->getBody()->close();
+            if ('' === $location) {
+                throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+            }
+
+            return ['body' => '', 'location' => $location];
+        }
+
+        if ($status < 200 || $status >= 300) {
+            $response->getBody()->close();
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
+
+        return ['body' => $this->readBody($response, $maxBytes), 'location' => null];
+    }
+
+    private function readBody(ResponseInterface $response, int $maxBytes): string
+    {
+        $source = $response->getBody();
+        $length = $response->getHeaderLine('Content-Length');
+        if ($maxBytes > 0 && is_numeric($length) && (int) $length > $maxBytes) {
+            $source->close();
+            throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
+        }
+
+        $temp = fopen('php://temp', 'r+');
+        if (false === $temp) {
+            $source->close();
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
+
+        $target = Utils::streamFor($temp);
+        $read   = 0;
+        while (!$source->eof()) {
+            $chunk = $source->read(8192);
+            if ('' === $chunk) {
+                break;
+            }
+
+            $read += strlen($chunk);
+            if ($maxBytes > 0 && $read > $maxBytes) {
+                $source->close();
+                $target->close();
+                throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
+            }
+
+            $target->write($chunk);
+        }
+
+        $source->close();
+        $target->rewind();
+        $contents = $target->getContents();
+        $target->close();
+
+        return $contents;
     }
 
     private function resolveLocation(string $current, string $location): string

@@ -48,6 +48,7 @@ final class ImageController extends AjaxController
         $rawLength     = $request->server->get('CONTENT_LENGTH', 0);
         $contentLength = is_numeric($rawLength) ? (int) $rawLength : 0;
         $postLimit     = IniSize::toBytes((string) ini_get('post_max_size'));
+        // PHP discards the body when post_max_size is exceeded, so the request arrives with a Content-Length and no files.
         if ($contentLength > 0 && $postLimit > 0 && $contentLength > $postLimit && !$request->files->count()) {
             return $this->sendJsonResponse([
                 'files' => [[
@@ -68,25 +69,19 @@ final class ImageController extends AjaxController
             }
 
             $name = $file->getClientOriginalName();
-            if (\UPLOAD_ERR_OK !== $file->getError()) {
+            if (!$file->isValid()) {
                 $results[] = [
                     'ok'    => false,
                     'name'  => $name,
-                    'error' => \UPLOAD_ERR_INI_SIZE === $file->getError() || \UPLOAD_ERR_FORM_SIZE === $file->getError()
+                    'error' => \in_array($file->getError(), [\UPLOAD_ERR_INI_SIZE, \UPLOAD_ERR_FORM_SIZE], true)
                         ? $this->limitMessage()
                         : $this->translator->trans(Translation::ERROR_UPLOAD),
                 ];
                 continue;
             }
 
-            $contents = file_get_contents($file->getPathname());
-            if (false === $contents) {
-                $results[] = ['ok' => false, 'name' => $name, 'error' => $this->translator->trans(Translation::ERROR_READ)];
-                continue;
-            }
-
             try {
-                $image     = $storage->store($urls->directory(), $name, $contents);
+                $image     = $storage->storeUploaded($urls->directory(), $file);
                 $results[] = ['ok' => true, 'image' => $this->present($image, $urls)];
             } catch (ImageRejectedException $exception) {
                 $results[] = ['ok' => false, 'name' => $name, 'error' => $this->rejected($exception)];

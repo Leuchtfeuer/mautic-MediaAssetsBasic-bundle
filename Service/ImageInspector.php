@@ -7,6 +7,8 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\InspectedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use Symfony\Component\Mime\Exception\InvalidArgumentException;
+use Symfony\Component\Mime\MimeTypes;
 
 final class ImageInspector
 {
@@ -20,7 +22,11 @@ final class ImageInspector
 
     public function inspectFile(string $path): InspectedImage
     {
-        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($path);
+        try {
+            $mime = MimeTypes::getDefault()->guessMimeType($path);
+        } catch (InvalidArgumentException) {
+            $mime = null;
+        }
         if (!is_string($mime) || !isset(self::EXTENSIONS[$mime])) {
             throw new ImageRejectedException(Translation::ERROR_TYPE);
         }

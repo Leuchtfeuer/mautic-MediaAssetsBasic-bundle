@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
+use Mautic\CoreBundle\Helper\InputHelper;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 final readonly class ImageStorage
 {
@@ -17,9 +20,7 @@ final readonly class ImageStorage
     public function store(string $directory, string $originalName, string $contents): ListedImage
     {
         $inspected = $this->inspector->inspectContents($contents);
-        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
-            throw new ImageRejectedException(Translation::ERROR_DIRECTORY);
-        }
+        $this->ensureDirectory($directory);
 
         $name = $this->uniqueName($directory, $this->stem($originalName), $inspected->extension);
         $path = $directory.'/'.$name;
@@ -30,10 +31,34 @@ final readonly class ImageStorage
         return new ListedImage($name, $inspected->width, $inspected->height, strlen($contents));
     }
 
+    public function storeUploaded(string $directory, UploadedFile $file): ListedImage
+    {
+        $inspected = $this->inspector->inspectFile($file->getPathname());
+        $this->ensureDirectory($directory);
+
+        $name = $this->uniqueName($directory, $this->stem($file->getClientOriginalName()), $inspected->extension);
+        try {
+            $moved = $file->move($directory, $name);
+        } catch (FileException) {
+            throw new ImageRejectedException(Translation::ERROR_STORE);
+        }
+
+        $bytes = $moved->getSize();
+
+        return new ListedImage($name, $inspected->width, $inspected->height, false === $bytes ? 0 : $bytes);
+    }
+
+    private function ensureDirectory(string $directory): void
+    {
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new ImageRejectedException(Translation::ERROR_DIRECTORY);
+        }
+    }
+
     private function stem(string $originalName): string
     {
-        $stem = pathinfo($originalName, PATHINFO_FILENAME);
-        $stem = preg_replace('/[^A-Za-z0-9_-]+/', '-', $stem) ?? '';
+        $stem = pathinfo(InputHelper::transliterateFilename($originalName), PATHINFO_FILENAME);
+        $stem = preg_replace('/-+/', '-', $stem) ?? '';
         $stem = trim($stem, '-');
         if ('' === $stem) {
             $stem = 'image';

@@ -9,6 +9,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 final class ImageStorageTest extends TestCase
 {
@@ -52,9 +53,24 @@ final class ImageStorageTest extends TestCase
 
     public function testUsesAFallbackStemWhenTheNameHasNoSafeCharacters(): void
     {
-        $stored = (new ImageStorage(new ImageInspector()))->store($this->directory, '@@@.png', $this->png());
+        $stored = (new ImageStorage(new ImageInspector()))->store($this->directory, '---------------------.jpg', $this->png());
 
         $this->assertSame('image.png', $stored->name);
+    }
+
+    public function testMovesAnUploadedFileIntoTheDirectory(): void
+    {
+        $source = tempnam(sys_get_temp_dir(), 'lf-upload');
+        $this->assertIsString($source);
+        file_put_contents($source, $this->png());
+        $file = new UploadedFile($source, 'Hero Image (final).png', 'image/png', null, true);
+
+        $stored = (new ImageStorage(new ImageInspector()))->storeUploaded($this->directory, $file);
+
+        $this->assertSame('Hero-Image-final.png', $stored->name);
+        $this->assertSame(1, $stored->width);
+        $this->assertFileExists($this->directory.'/Hero-Image-final.png');
+        $this->assertFileDoesNotExist($source);
     }
 
     public function testRejectsContentsThatAreNotAnImage(): void
