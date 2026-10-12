@@ -7,19 +7,23 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\TooManyRedirectsException;
 use GuzzleHttp\Exception\TransferException;
-use GuzzleHttp\Psr7\Utils;
 use GuzzleHttp\RequestOptions;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\UriInterface;
 
 final readonly class UrlImageImporter
 {
     private const TIMEOUT_SECONDS = 10;
 
     private const MAX_REDIRECTS = 3;
+
+    private const MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
     public function __construct(
         private PublicHostGuard $guard,
@@ -29,43 +33,37 @@ final readonly class UrlImageImporter
 
     public function import(string $directory, string $url, string $relativeDirectory = '', bool $allowSvg = false): ListedImage
     {
-        $current = trim($url);
-        $max     = IniSize::toBytes(IniSize::uploadMaxFilesize());
+        $url      = trim($url);
+        $maxBytes = min(self::MAX_DOWNLOAD_BYTES, IniSize::toBytes(IniSize::uploadMaxFilesize()));
+        $this->guard->safeAddresses($url);
 
-        for ($hop = 0; $hop <= self::MAX_REDIRECTS; ++$hop) {
-            $addresses = $this->guard->safeAddresses($current);
-            $response  = $this->download($current, $addresses[0], $max);
-            if (null !== $response['location']) {
-                if (self::MAX_REDIRECTS === $hop) {
-                    throw new ImageRejectedException(Translation::ERROR_REDIRECTS);
-                }
-                $current = $this->resolveLocation($current, $response['location']);
-                continue;
-            }
+        $downloaded = $this->download($url, $maxBytes);
+        $name       = $this->nameFromUrl($downloaded['url']);
 
-            $name = $this->nameFromUrl($current);
-
-            return $this->storage->store($directory, $name, $response['body'], $relativeDirectory, $allowSvg);
-        }
-
-        throw new ImageRejectedException(Translation::ERROR_REDIRECTS);
+        return $this->storage->store($directory, $name, $downloaded['body'], $relativeDirectory, $allowSvg);
     }
 
     /**
-     * @return array{body: string, location: ?string}
+     * @return array{url: string, body: string}
      */
-    private function download(string $url, string $ip, int $maxBytes): array
+    private function download(string $url, int $maxBytes): array
     {
         $parts = parse_url($url);
         if (!is_array($parts) || !isset($parts['host'], $parts['scheme'])) {
             throw new ImageRejectedException(Translation::ERROR_SCHEME);
         }
 
-        $host   = trim($parts['host'], '[]');
-        $port   = isset($parts['port']) ? (int) $parts['port'] : ('https' === strtolower($parts['scheme']) ? 443 : 80);
-        $pinned = str_contains($ip, ':') ? '['.$ip.']' : $ip;
+        $host      = trim($parts['host'], '[]');
+        $port      = isset($parts['port']) ? (int) $parts['port'] : ('https' === strtolower($parts['scheme']) ? 443 : 80);
+        $addresses = $this->guard->safeAddresses($url);
+        $pinned    = str_contains($addresses[0], ':') ? '['.$addresses[0].']' : $addresses[0];
+
+        $temp = fopen('php://temp', 'r+');
+        if (false === $temp) {
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
+
         $client = new Client([
-            RequestOptions::ALLOW_REDIRECTS => false,
             RequestOptions::CONNECT_TIMEOUT => self::TIMEOUT_SECONDS,
             RequestOptions::HEADERS         => ['User-Agent' => 'Mautic Media Assets'],
             RequestOptions::HTTP_ERRORS     => false,
@@ -74,102 +72,93 @@ final readonly class UrlImageImporter
 
         try {
             $response = $client->request('GET', $url, [
-                RequestOptions::STREAM  => true,
-                'curl'                  => [
+                RequestOptions::SINK            => $temp,
+                RequestOptions::ALLOW_REDIRECTS => [
+                    'max'             => self::MAX_REDIRECTS,
+                    'protocols'       => ['http', 'https'],
+                    'strict'          => true,
+                    'referer'         => false,
+                    'track_redirects' => true,
+                    'on_redirect'     => function (RequestInterface $request, ResponseInterface $response, UriInterface $uri): void {
+                        $this->guard->safeAddresses((string) $uri);
+                    },
+                ],
+                RequestOptions::ON_HEADERS => function (ResponseInterface $response) use ($maxBytes): void {
+                    $this->assertContentLengthWithinLimit($response, $maxBytes);
+                },
+                'progress' => function (int $downloadTotal, int $downloadedBytes) use ($maxBytes): void {
+                    if ($maxBytes > 0 && $downloadedBytes > $maxBytes) {
+                        throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
+                    }
+                },
+                'curl' => [
                     CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
                     CURLOPT_RESOLVE   => [$host.':'.$port.':'.$pinned],
                 ],
             ]);
+        } catch (TooManyRedirectsException) {
+            fclose($temp);
+            throw new ImageRejectedException(Translation::ERROR_REDIRECTS);
         } catch (ConnectException|RequestException $exception) {
+            fclose($temp);
+            $previous = $exception->getPrevious();
+            if ($previous instanceof ImageRejectedException) {
+                throw $previous;
+            }
             $errno = $exception->getHandlerContext()['errno'] ?? null;
             if (CURLE_OPERATION_TIMEDOUT === $errno) {
                 throw new ImageRejectedException(Translation::ERROR_TIMEOUT);
             }
 
             throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        } catch (TransferException) {
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        }
-
-        $status = $response->getStatusCode();
-        if ($status >= 300 && $status < 400) {
-            $location = $response->getHeaderLine('Location');
-            $response->getBody()->close();
-            if ('' === $location) {
-                throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        } catch (TransferException $exception) {
+            fclose($temp);
+            $previous = $exception->getPrevious();
+            if ($previous instanceof ImageRejectedException) {
+                throw $previous;
             }
 
-            return ['body' => '', 'location' => $location];
-        }
-
-        if ($status < 200 || $status >= 300) {
-            $response->getBody()->close();
             throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
-        return ['body' => $this->readBody($response, $maxBytes), 'location' => null];
-    }
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            fclose($temp);
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
 
-    private function readBody(ResponseInterface $response, int $maxBytes): string
-    {
-        $source = $response->getBody();
-        $length = $response->getHeaderLine('Content-Length');
-        if ($maxBytes > 0 && is_numeric($length) && (int) $length > $maxBytes) {
-            $source->close();
+        rewind($temp);
+        $body = stream_get_contents($temp);
+        fclose($temp);
+        if (!is_string($body)) {
+            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
+
+        if ($maxBytes > 0 && strlen($body) > $maxBytes) {
             throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
         }
 
-        $temp = fopen('php://temp', 'r+');
-        if (false === $temp) {
-            $source->close();
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        }
-
-        $target = Utils::streamFor($temp);
-        $read   = 0;
-        while (!$source->eof()) {
-            $chunk = $source->read(8192);
-            if ('' === $chunk) {
-                break;
-            }
-
-            $read += strlen($chunk);
-            if ($maxBytes > 0 && $read > $maxBytes) {
-                $source->close();
-                $target->close();
-                throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
-            }
-
-            $target->write($chunk);
-        }
-
-        $source->close();
-        $target->rewind();
-        $contents = $target->getContents();
-        $target->close();
-
-        return $contents;
+        return [
+            'url'  => $this->effectiveUrl($url, $response),
+            'body' => $body,
+        ];
     }
 
-    private function resolveLocation(string $current, string $location): string
+    private function assertContentLengthWithinLimit(ResponseInterface $response, int $maxBytes): void
     {
-        if (str_starts_with($location, 'http://') || str_starts_with($location, 'https://')) {
-            return $location;
+        $length = $response->getHeaderLine('Content-Length');
+        if ($maxBytes > 0 && '' !== $length && is_numeric($length) && (int) $length > $maxBytes) {
+            throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
+        }
+    }
+
+    private function effectiveUrl(string $url, ResponseInterface $response): string
+    {
+        $history = $response->getHeader('X-Guzzle-Redirect-History');
+        if ([] !== $history) {
+            return end($history);
         }
 
-        $parts = parse_url($current);
-        if (!is_array($parts) || !isset($parts['scheme'], $parts['host'])) {
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
-        }
-
-        $origin = $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-        if (str_starts_with($location, '/')) {
-            return $origin.$location;
-        }
-
-        $path = $parts['path'] ?? '/';
-
-        return $origin.rtrim(dirname($path), '/').'/'.$location;
+        return $url;
     }
 
     private function nameFromUrl(string $url): string
