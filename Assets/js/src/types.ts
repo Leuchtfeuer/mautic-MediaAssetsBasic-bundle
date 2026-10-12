@@ -50,6 +50,7 @@ export interface PickerConfig {
   foldersUrl: string;
   createFolderUrl: string;
   moveUrl: string;
+  allowSvg?: boolean;
   messages?: Partial<PickerMessages>;
 }
 

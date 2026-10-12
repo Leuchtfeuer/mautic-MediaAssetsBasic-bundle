@@ -43,6 +43,12 @@ function fill(template: string, values: Record<string, string | number>): string
   );
 }
 
+function uploadAccept(allowSvg: boolean | undefined): string {
+  const raster = 'image/jpeg,image/png,image/gif,image/webp';
+
+  return allowSvg ? `${raster},image/svg+xml` : raster;
+}
+
 function formatBytes(bytes: number, messages: PickerMessages): string {
   if (bytes < 1024) {
     return `${bytes} ${messages.byte}`;
@@ -426,7 +432,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
             id="lf-media-assets-file"
             className="lf-media-assets__file"
             type="file"
-            accept="image/*"
+            accept={uploadAccept(config.allowSvg)}
             multiple
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);

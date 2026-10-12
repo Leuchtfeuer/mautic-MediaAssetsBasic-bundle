@@ -36,6 +36,16 @@ final class AssetsSubscriberTest extends TestCase
         $this->assertStringContainsString('leuchtfeuer_media_assets_basic_folder_create', $event->declarations[0]);
         $this->assertStringContainsString('leuchtfeuer_media_assets_basic_image_move', $event->declarations[0]);
         $this->assertStringContainsString('t:'.Translation::IMPORT_FROM_URL, $event->declarations[0]);
+        $this->assertStringContainsString('"allowSvg":true', $event->declarations[0]);
+    }
+
+    public function testDisablesSvgOnEmailBuilderPages(): void
+    {
+        $event = new RecordingCustomAssetsEvent();
+        $this->subscriber(true, true, Request::create('/s/emails/new'))->injectAssets($event);
+
+        $this->assertCount(1, $event->declarations);
+        $this->assertStringContainsString('"allowSvg":false', $event->declarations[0]);
     }
 
     public function testSkipsInjectionWhenThePluginIsUnpublished(): void

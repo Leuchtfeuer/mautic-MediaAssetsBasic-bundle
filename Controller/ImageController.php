@@ -12,6 +12,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\IniSize;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\LandingPagePickerContext;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\UrlImageImporter;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
@@ -22,7 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class ImageController extends AjaxController
 {
-    public function listAction(Request $request, Config $config, ImageLibrary $library, MediaPath $paths, ImageUrls $urls): JsonResponse
+    public function listAction(Request $request, Config $config, ImageLibrary $library, MediaPath $paths, ImageUrls $urls, LandingPagePickerContext $pickerContext): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -34,9 +35,10 @@ final class ImageController extends AjaxController
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
 
-        $page   = max(1, $request->query->getInt('page', 1));
-        $limit  = min(100, max(1, $request->query->getInt('limit', 24)));
-        $listed = $library->listImages($directory['absolute'], $page, $limit, $directory['relative']);
+        $page     = max(1, $request->query->getInt('page', 1));
+        $limit    = min(100, max(1, $request->query->getInt('limit', 24)));
+        $allowSvg = $pickerContext->allowSvg($request);
+        $listed   = $library->listImages($directory['absolute'], $page, $limit, $directory['relative'], $allowSvg);
 
         return $this->sendJsonResponse([
             'page'   => $page,
@@ -47,7 +49,7 @@ final class ImageController extends AjaxController
         ]);
     }
 
-    public function uploadAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls): JsonResponse
+    public function uploadAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls, LandingPagePickerContext $pickerContext): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -82,6 +84,7 @@ final class ImageController extends AjaxController
         $uploaded = $request->files->get('files');
         $files    = $uploaded instanceof UploadedFile ? [$uploaded] : (is_array($uploaded) ? $uploaded : []);
         $results  = [];
+        $allowSvg = $pickerContext->allowSvg($request);
 
         foreach ($files as $file) {
             if (!$file instanceof UploadedFile) {
@@ -101,7 +104,7 @@ final class ImageController extends AjaxController
             }
 
             try {
-                $image     = $storage->storeUploaded($directory['absolute'], $file, $directory['relative']);
+                $image     = $storage->storeUploaded($directory['absolute'], $file, $directory['relative'], $allowSvg);
                 $results[] = ['ok' => true, 'image' => $this->present($image, $urls)];
             } catch (ImageRejectedException $exception) {
                 $results[] = ['ok' => false, 'name' => $name, 'error' => $this->rejected($exception)];
@@ -111,7 +114,7 @@ final class ImageController extends AjaxController
         return $this->sendJsonResponse(['files' => $results]);
     }
 
-    public function importAction(Request $request, Config $config, UrlImageImporter $importer, MediaPath $paths, ImageUrls $urls): JsonResponse
+    public function importAction(Request $request, Config $config, UrlImageImporter $importer, MediaPath $paths, ImageUrls $urls, LandingPagePickerContext $pickerContext): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -126,7 +129,7 @@ final class ImageController extends AjaxController
 
         try {
             $directory = $paths->resolve(is_string($path) ? $path : '');
-            $image     = $importer->import($directory['absolute'], trim($url), $directory['relative']);
+            $image     = $importer->import($directory['absolute'], trim($url), $directory['relative'], $pickerContext->allowSvg($request));
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
@@ -134,7 +137,7 @@ final class ImageController extends AjaxController
         return $this->sendJsonResponse(['image' => $this->present($image, $urls)]);
     }
 
-    public function moveAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls): JsonResponse
+    public function moveAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls, LandingPagePickerContext $pickerContext): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -149,7 +152,7 @@ final class ImageController extends AjaxController
 
         try {
             $folderPath = is_string($folder) ? $folder : '';
-            $image      = $storage->move($paths, trim($path), $folderPath);
+            $image      = $storage->move($paths, trim($path), $folderPath, $pickerContext->allowSvg($request));
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }

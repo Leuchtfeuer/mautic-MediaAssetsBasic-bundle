@@ -82,6 +82,30 @@ final class ImageLibraryTest extends TestCase
         (new ImageStorage(new ImageInspector()))->store($this->directory, 'photo.jpg', 'not an image');
     }
 
+    public function testListsSvgFilesOnlyWhenSvgIsAllowed(): void
+    {
+        $storage = new ImageStorage(new ImageInspector());
+        $storage->store($this->directory, 'icon.svg', $this->svg(), '', true);
+        $storage->store($this->directory, 'photo.png', $this->png());
+
+        $library = new ImageLibrary(new ImageInspector());
+        $without = $library->listImages($this->directory, 1, 24, '', false);
+        $with    = $library->listImages($this->directory, 1, 24, '', true);
+
+        $this->assertSame(['photo.png'], array_map(static fn (ListedImage $image): string => $image->name, $without['images']));
+        $this->assertSame(1, $without['total']);
+        $this->assertEqualsCanonicalizing(
+            ['photo.png', 'icon.svg'],
+            array_map(static fn (ListedImage $image): string => $image->name, $with['images']),
+        );
+        $this->assertSame(2, $with['total']);
+    }
+
+    private function svg(): string
+    {
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"><rect width="12" height="8" fill="#000"/></svg>';
+    }
+
     private function png(): string
     {
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);

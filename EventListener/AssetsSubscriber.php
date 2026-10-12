@@ -8,6 +8,7 @@ use Mautic\CoreBundle\CoreEvents;
 use Mautic\CoreBundle\Event\CustomAssetsEvent;
 use Mautic\InstallBundle\Install\InstallService;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\Config;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\LandingPagePickerContext;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -48,6 +49,8 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
             return;
         }
 
+        $allowSvg = LandingPagePickerContext::isLandingPageBuilderRequest($request);
+
         $messages = [];
         foreach (Translation::picker() as $name => $key) {
             $messages[$name] = $this->translator->trans($key);
@@ -60,6 +63,7 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
             'foldersUrl'       => $this->router->generate('leuchtfeuer_media_assets_basic_folder_list'),
             'createFolderUrl'  => $this->router->generate('leuchtfeuer_media_assets_basic_folder_create'),
             'moveUrl'          => $this->router->generate('leuchtfeuer_media_assets_basic_image_move'),
+            'allowSvg'         => $allowSvg,
             'messages'         => $messages,
         ];
 

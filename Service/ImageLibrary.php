@@ -17,7 +17,7 @@ final readonly class ImageLibrary
     /**
      * @return array{images: list<ListedImage>, total: int}
      */
-    public function listImages(string $directory, int $page, int $limit, string $relativeDirectory = ''): array
+    public function listImages(string $directory, int $page, int $limit, string $relativeDirectory = '', bool $allowSvg = false): array
     {
         $page  = max(1, $page);
         $limit = max(1, $limit);
@@ -33,7 +33,7 @@ final readonly class ImageLibrary
         $offset = ($page - 1) * $limit;
         foreach ($finder as $file) {
             try {
-                $inspected = $this->inspector->inspectFile($file->getPathname());
+                $inspected = $this->inspector->inspectFile($file->getPathname(), $allowSvg);
             } catch (ImageRejectedException) {
                 continue;
             }

@@ -79,6 +79,46 @@ final class ImageInspectorTest extends TestCase
         (new ImageInspector())->inspectFile($path);
     }
 
+    public function testAcceptsASafeSvgWhenAllowed(): void
+    {
+        $inspector = new ImageInspector();
+        $svg       = $this->svg();
+
+        $fromBytes = $inspector->inspectContents($svg, true);
+        $this->assertSame('image/svg+xml', $fromBytes->mime);
+        $this->assertSame('svg', $fromBytes->extension);
+        $this->assertSame(12, $fromBytes->width);
+        $this->assertSame(8, $fromBytes->height);
+
+        $path = $this->directory.'/icon.svg';
+        file_put_contents($path, $svg);
+        $fromFile = $inspector->inspectFile($path, true);
+        $this->assertSame('svg', $fromFile->extension);
+    }
+
+    public function testRejectsSvgOutsideLandingPageContext(): void
+    {
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_TYPE);
+
+        (new ImageInspector())->inspectContents($this->svg());
+    }
+
+    public function testRejectsSvgWithScriptContent(): void
+    {
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_TYPE);
+
+        (new ImageInspector())->inspectContents($svg, true);
+    }
+
+    private function svg(): string
+    {
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"><rect width="12" height="8" fill="#000"/></svg>';
+    }
+
     private function png(): string
     {
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);

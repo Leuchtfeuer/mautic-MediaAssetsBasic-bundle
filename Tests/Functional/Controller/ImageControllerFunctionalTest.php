@@ -419,6 +419,46 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertSame('Only JPEG, PNG, GIF and WebP images are allowed.', $first['error'] ?? null);
     }
 
+    public function testUploadAcceptsSvgInTheLandingPagePickerContext(): void
+    {
+        $this->publishPlugin();
+
+        $name = $this->uploadSvg('lf-icon.svg', '', '/s/pages/new');
+        $this->assertSame('lf-icon.svg', $name);
+
+        $paths = self::getContainer()->get(PathsHelper::class);
+        $this->assertInstanceOf(PathsHelper::class, $paths);
+        $this->assertFileExists(rtrim($paths->getImagePath(), '/').'/lf-icon.svg');
+    }
+
+    public function testUploadRejectsSvgOutsideTheLandingPagePickerContext(): void
+    {
+        $this->publishPlugin();
+
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, $this->svg());
+        $file = new UploadedFile($path, 'blocked.svg', 'image/svg+xml', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            [],
+            ['files' => [$file]],
+            $this->ajaxHeaders('/s/emails/new'),
+        );
+
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertFalse($first['ok'] ?? null);
+        $this->assertSame('Only JPEG, PNG, GIF and WebP images are allowed.', $first['error'] ?? null);
+    }
+
     public function testASecondUploadOfTheSameNameGetsASuffix(): void
     {
         $this->publishPlugin();
@@ -450,12 +490,17 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
     /**
      * @return array<string, string>
      */
-    private function ajaxHeaders(): array
+    private function ajaxHeaders(?string $refererPath = null): array
     {
-        return [
+        $headers = [
             'HTTP_X-Requested-With' => 'XMLHttpRequest',
             'HTTP_X-CSRF-Token'     => $this->ajaxCsrfToken(),
         ];
+        if (null !== $refererPath) {
+            $headers['HTTP_Referer'] = 'https://mautic.test'.$refererPath;
+        }
+
+        return $headers;
     }
 
     private function assertRejected(string $content, int $status, string $message): void
@@ -464,6 +509,40 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertResponseStatusCodeSame($status);
         $this->assertIsArray($payload);
         $this->assertSame($message, $payload['error'] ?? null);
+    }
+
+    private function uploadSvg(string $filename, string $folder = '', ?string $refererPath = '/s/pages/new'): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, $this->svg());
+        $file = new UploadedFile($path, $filename, 'image/svg+xml', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            ['path' => $folder],
+            ['files' => [$file]],
+            $this->ajaxHeaders($refererPath),
+        );
+
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertTrue($first['ok'] ?? null, (string) json_encode($first));
+        $image = $first['image'] ?? null;
+        $this->assertIsArray($image);
+        $name     = $image['name'] ?? null;
+        $relative = $image['path'] ?? $name;
+        $this->assertIsString($name);
+        $this->assertIsString($relative);
+        $this->uploadedPaths[] = $relative;
+
+        return $name;
     }
 
     private function uploadPng(string $filename, string $folder = ''): string
@@ -560,6 +639,11 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertIsString($png);
 
         return $png;
+    }
+
+    private function svg(): string
+    {
+        return '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"><rect width="12" height="8" fill="#000"/></svg>';
     }
 
     private function countErrorHandlers(): int

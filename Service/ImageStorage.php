@@ -17,9 +17,9 @@ final readonly class ImageStorage
     {
     }
 
-    public function store(string $directory, string $originalName, string $contents, string $relativeDirectory = ''): ListedImage
+    public function store(string $directory, string $originalName, string $contents, string $relativeDirectory = '', bool $allowSvg = false): ListedImage
     {
-        $inspected = $this->inspector->inspectContents($contents);
+        $inspected = $this->inspector->inspectContents($contents, $allowSvg);
         $this->ensureDirectory($directory);
 
         $name = $this->uniqueName($directory, $this->stem($originalName), $inspected->extension);
@@ -37,7 +37,7 @@ final readonly class ImageStorage
         );
     }
 
-    public function move(MediaPath $paths, string $imageRelative, string $targetFolderRelative): ListedImage
+    public function move(MediaPath $paths, string $imageRelative, string $targetFolderRelative, bool $allowSvg = false): ListedImage
     {
         $source = $paths->resolveFile($imageRelative);
         $target = $paths->resolve($targetFolderRelative);
@@ -46,7 +46,7 @@ final readonly class ImageStorage
             throw new ImageRejectedException(Translation::ERROR_PATH);
         }
 
-        $inspected = $this->inspector->inspectFile($source['absolute']);
+        $inspected = $this->inspector->inspectFile($source['absolute'], $allowSvg || str_ends_with(strtolower($source['relative']), '.svg'));
         $stem      = $this->stem(basename($source['relative']));
         $newName   = $this->uniqueName($target['absolute'], $stem, $inspected->extension);
         $dest      = $target['absolute'].'/'.$newName;
@@ -66,9 +66,9 @@ final readonly class ImageStorage
         );
     }
 
-    public function storeUploaded(string $directory, UploadedFile $file, string $relativeDirectory = ''): ListedImage
+    public function storeUploaded(string $directory, UploadedFile $file, string $relativeDirectory = '', bool $allowSvg = false): ListedImage
     {
-        $inspected = $this->inspector->inspectFile($file->getPathname());
+        $inspected = $this->inspector->inspectFile($file->getPathname(), $allowSvg);
         $this->ensureDirectory($directory);
 
         $name = $this->uniqueName($directory, $this->stem($file->getClientOriginalName()), $inspected->extension);
