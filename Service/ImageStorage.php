@@ -37,6 +37,35 @@ final readonly class ImageStorage
         );
     }
 
+    public function move(MediaPath $paths, string $imageRelative, string $targetFolderRelative): ListedImage
+    {
+        $source = $paths->resolveFile($imageRelative);
+        $target = $paths->resolve($targetFolderRelative);
+
+        if ($paths->parentRelative($source['relative']) === $target['relative']) {
+            throw new ImageRejectedException(Translation::ERROR_PATH);
+        }
+
+        $inspected = $this->inspector->inspectFile($source['absolute']);
+        $stem      = $this->stem(basename($source['relative']));
+        $newName   = $this->uniqueName($target['absolute'], $stem, $inspected->extension);
+        $dest      = $target['absolute'].'/'.$newName;
+
+        if (!rename($source['absolute'], $dest)) {
+            throw new ImageRejectedException(Translation::ERROR_STORE);
+        }
+
+        $bytes = filesize($dest);
+
+        return new ListedImage(
+            $newName,
+            $inspected->width,
+            $inspected->height,
+            false === $bytes ? 0 : $bytes,
+            $paths->join($target['relative'], $newName),
+        );
+    }
+
     public function storeUploaded(string $directory, UploadedFile $file, string $relativeDirectory = ''): ListedImage
     {
         $inspected = $this->inspector->inspectFile($file->getPathname());

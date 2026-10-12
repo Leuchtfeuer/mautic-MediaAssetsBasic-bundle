@@ -24,6 +24,11 @@ return [
                 'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\ImageController::importAction',
                 'method'     => 'POST',
             ],
+            'leuchtfeuer_media_assets_basic_image_move' => [
+                'path'       => '/media-assets-basic/images/move',
+                'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\ImageController::moveAction',
+                'method'     => 'POST',
+            ],
             'leuchtfeuer_media_assets_basic_folder_list' => [
                 'path'       => '/media-assets-basic/folders',
                 'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\FolderController::listAction',

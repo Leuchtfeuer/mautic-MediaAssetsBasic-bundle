@@ -21,6 +21,43 @@ final readonly class MediaPath
     /**
      * @return array{absolute: string, relative: string}
      */
+    public function resolveFile(string $relative): array
+    {
+        $normalized = $this->normalize($relative);
+        if ('' === $normalized) {
+            throw new ImageRejectedException(Translation::ERROR_PATH);
+        }
+
+        $this->ensureRoot();
+
+        $absolute = $this->root().'/'.$normalized;
+        if (!is_file($absolute)) {
+            throw new ImageRejectedException(Translation::ERROR_PATH);
+        }
+
+        $realRoot     = realpath($this->root());
+        $realAbsolute = realpath($absolute);
+        if (false === $realRoot || false === $realAbsolute || !str_starts_with($realAbsolute, $realRoot)) {
+            throw new ImageRejectedException(Translation::ERROR_PATH);
+        }
+
+        return [
+            'absolute' => $realAbsolute,
+            'relative' => $normalized,
+        ];
+    }
+
+    public function parentRelative(string $fileRelative): string
+    {
+        $normalized   = $this->normalize($fileRelative);
+        $position     = strrpos($normalized, '/');
+
+        return false === $position ? '' : substr($normalized, 0, $position);
+    }
+
+    /**
+     * @return array{absolute: string, relative: string}
+     */
     public function resolve(?string $relative): array
     {
         $normalized = $this->normalize($relative);

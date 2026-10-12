@@ -40,6 +40,7 @@ export interface PickerMessages {
   folderCreateFailed: string;
   expandFolder: string;
   collapseFolder: string;
+  moveFailed: string;
 }
 
 export interface PickerConfig {
@@ -48,6 +49,7 @@ export interface PickerConfig {
   importUrl: string;
   foldersUrl: string;
   createFolderUrl: string;
+  moveUrl: string;
   messages?: Partial<PickerMessages>;
 }
 

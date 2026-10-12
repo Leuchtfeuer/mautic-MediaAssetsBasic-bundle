@@ -134,6 +134,29 @@ final class ImageController extends AjaxController
         return $this->sendJsonResponse(['image' => $this->present($image, $urls)]);
     }
 
+    public function moveAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls): JsonResponse
+    {
+        if (!$config->isPublished()) {
+            return $this->unavailable();
+        }
+
+        $payload = json_decode($request->getContent(), true);
+        $path    = is_array($payload) ? ($payload['path'] ?? null) : $request->request->get('path');
+        $folder  = is_array($payload) ? ($payload['folder'] ?? '') : $request->request->get('folder', '');
+        if (!is_string($path) || '' === trim($path)) {
+            return $this->sendJsonResponse(['error' => $this->translator->trans(Translation::ERROR_PATH)], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $folderPath = is_string($folder) ? $folder : '';
+            $image      = $storage->move($paths, trim($path), $folderPath);
+        } catch (ImageRejectedException $exception) {
+            return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
+        }
+
+        return $this->sendJsonResponse(['image' => $this->present($image, $urls)]);
+    }
+
     /**
      * @return array{name: string, path: string, url: string, width: int, height: int, bytes: int}
      */

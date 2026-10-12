@@ -107,6 +107,20 @@ export function uploadFile(
   });
 }
 
+export async function moveImage(config: PickerConfig, imagePath: string, folder: string): Promise<MediaImage> {
+  const response = await fetch(config.moveUrl, {
+    method: 'POST',
+    headers: headers(true),
+    body: JSON.stringify({ path: imagePath, folder }),
+  });
+  const payload = await response.json() as { image?: MediaImage; error?: string };
+  if (!response.ok || !payload.image) {
+    throw new Error(payload.error || config.messages?.moveFailed || 'The image could not be moved.');
+  }
+
+  return payload.image;
+}
+
 export async function importUrl(config: PickerConfig, url: string, path: string): Promise<MediaImage> {
   const response = await fetch(config.importUrl, {
     method: 'POST',

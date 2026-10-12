@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 
+use Mautic\CoreBundle\Helper\CoreParametersHelper;
+use Mautic\CoreBundle\Helper\PathsHelper;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -28,12 +32,7 @@ final class ImageStorageTest extends TestCase
             return;
         }
 
-        foreach (glob($this->directory.'/*') ?: [] as $path) {
-            if (is_file($path)) {
-                unlink($path);
-            }
-        }
-        rmdir($this->directory);
+        $this->removeDirectory($this->directory);
     }
 
     public function testStoresASanitizedUniqueName(): void
@@ -79,6 +78,68 @@ final class ImageStorageTest extends TestCase
         $this->expectExceptionMessage(Translation::ERROR_TYPE);
 
         (new ImageStorage(new ImageInspector()))->store($this->directory, 'notes.txt', 'not an image');
+    }
+
+    public function testMovesAFileIntoAnotherFolder(): void
+    {
+        mkdir($this->directory.'/Target', 0775, true);
+        file_put_contents($this->directory.'/hero.png', $this->png());
+
+        $storage = new ImageStorage(new ImageInspector());
+        $moved   = $storage->move($this->paths(), 'hero.png', 'Target');
+
+        $this->assertSame('hero.png', $moved->name);
+        $this->assertSame('Target/hero.png', $moved->path);
+        $this->assertFileDoesNotExist($this->directory.'/hero.png');
+        $this->assertFileExists($this->directory.'/Target/hero.png');
+    }
+
+    public function testMovePicksAUniqueNameWhenTheTargetAlreadyContainsTheFile(): void
+    {
+        mkdir($this->directory.'/Target', 0775, true);
+        file_put_contents($this->directory.'/Target/hero.png', $this->png());
+        file_put_contents($this->directory.'/hero.png', $this->png());
+
+        $moved = (new ImageStorage(new ImageInspector()))->move($this->paths(), 'hero.png', 'Target');
+
+        $this->assertSame('hero-1.png', $moved->name);
+        $this->assertSame('Target/hero-1.png', $moved->path);
+        $this->assertFileExists($this->directory.'/Target/hero.png');
+        $this->assertFileExists($this->directory.'/Target/hero-1.png');
+    }
+
+    public function testMoveRejectsTheSameParentFolder(): void
+    {
+        file_put_contents($this->directory.'/hero.png', $this->png());
+
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_PATH);
+
+        (new ImageStorage(new ImageInspector()))->move($this->paths(), 'hero.png', '');
+    }
+
+    private function paths(): MediaPath
+    {
+        $helper = $this->createMock(PathsHelper::class);
+        $helper->method('getImagePath')->willReturn($this->directory.'/');
+        $helper->method('getSystemPath')->willReturn('media/images');
+
+        $parameters = $this->createMock(CoreParametersHelper::class);
+        $parameters->method('get')->willReturn('');
+
+        return new MediaPath(new ImageUrls($helper, $parameters));
+    }
+
+    private function removeDirectory(string $directory): void
+    {
+        foreach (glob($directory.'/*') ?: [] as $path) {
+            if (is_dir($path)) {
+                $this->removeDirectory($path);
+                continue;
+            }
+            unlink($path);
+        }
+        rmdir($directory);
     }
 
     private function png(): string

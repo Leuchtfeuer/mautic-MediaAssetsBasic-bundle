@@ -152,6 +152,158 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertContains($folderName, $paths);
     }
 
+    public function testMoveImageIntoAnotherFolder(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'Archive'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $relative = $this->uploadPng('move-me.png');
+        $this->assertSame('move-me.png', $relative);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => 'move-me.png', 'folder' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $moved = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($moved);
+        $image = $moved['image'] ?? null;
+        $this->assertIsArray($image);
+        $this->assertSame($folderName.'/move-me.png', $image['path'] ?? null);
+        $this->uploadedPaths[] = $folderName.'/move-me.png';
+
+        $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images?limit=50');
+        $rootList = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($rootList);
+        $rootImages = $rootList['images'] ?? null;
+        $this->assertIsArray($rootImages);
+        $rootNames = array_column($rootImages, 'name');
+        $this->assertNotContains('move-me.png', $rootNames);
+
+        $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName));
+        $folderList = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($folderList);
+        $folderImages = $folderList['images'] ?? null;
+        $this->assertIsArray($folderImages);
+        $this->assertSame([$folderName.'/move-me.png'], array_column($folderImages, 'path'));
+    }
+
+    public function testMoveRequiresAnImagePath(): void
+    {
+        $this->publishPlugin();
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => '', 'folder' => ''], JSON_THROW_ON_ERROR),
+        );
+
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_BAD_REQUEST, 'That folder path is not allowed.');
+    }
+
+    public function testMoveRejectsTheCurrentFolder(): void
+    {
+        $this->publishPlugin();
+
+        $this->uploadPng('stay.png');
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => 'stay.png', 'folder' => ''], JSON_THROW_ON_ERROR),
+        );
+
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_BAD_REQUEST, 'That folder path is not allowed.');
+        $paths = self::getContainer()->get(PathsHelper::class);
+        $this->assertInstanceOf(PathsHelper::class, $paths);
+        $this->assertFileExists(rtrim($paths->getImagePath(), '/').'/stay.png');
+    }
+
+    public function testMoveAssignsASuffixWhenTheTargetFolderAlreadyHasTheFile(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'Dupes'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $this->uploadPng('dup.png', $folderName);
+        $this->uploadPng('dup.png');
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => 'dup.png', 'folder' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $moved = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($moved);
+        $image = $moved['image'] ?? null;
+        $this->assertIsArray($image);
+        $this->assertSame($folderName.'/dup-1.png', $image['path'] ?? null);
+        $this->uploadedPaths[] = $folderName.'/dup-1.png';
+    }
+
+    public function testMoveRejectsAnUnknownImagePath(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'Empty'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => 'does-not-exist.png', 'folder' => $folderName], JSON_THROW_ON_ERROR),
+        );
+
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_BAD_REQUEST, 'That folder path is not allowed.');
+    }
+
     public function testListRejectsPathTraversal(): void
     {
         $this->publishPlugin();
@@ -225,6 +377,16 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
             [],
             $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
             json_encode(['url' => 'https://example.com/hero.png'], JSON_THROW_ON_ERROR),
+        );
+        $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_FORBIDDEN, 'Media & Assets (Basic) is not published.');
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/move',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['path' => 'hero.png', 'folder' => 'Archive'], JSON_THROW_ON_ERROR),
         );
         $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_FORBIDDEN, 'Media & Assets (Basic) is not published.');
     }

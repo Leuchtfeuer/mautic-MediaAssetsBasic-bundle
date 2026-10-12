@@ -53,6 +53,50 @@ final class MediaPathTest extends TestCase
         $this->assertSame(realpath($this->directory.'/Brand/Campaign'), $resolved['absolute']);
     }
 
+    public function testResolvesAFileInsideTheMediaRoot(): void
+    {
+        file_put_contents($this->directory.'/hero.png', 'png');
+
+        $resolved = $this->paths()->resolveFile('hero.png');
+
+        $this->assertSame('hero.png', $resolved['relative']);
+        $this->assertSame(realpath($this->directory.'/hero.png'), $resolved['absolute']);
+    }
+
+    public function testParentRelativeReturnsTheDirectoryPath(): void
+    {
+        $paths = $this->paths();
+
+        $this->assertSame('', $paths->parentRelative('hero.png'));
+        $this->assertSame('Brand', $paths->parentRelative('Brand/hero.png'));
+    }
+
+    public function testResolveFileRejectsAnEmptyPath(): void
+    {
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_PATH);
+
+        $this->paths()->resolveFile('');
+    }
+
+    public function testResolveFileRejectsAMissingFile(): void
+    {
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_PATH);
+
+        $this->paths()->resolveFile('missing.png');
+    }
+
+    public function testResolveFileRejectsADirectory(): void
+    {
+        mkdir($this->directory.'/Brand', 0775, true);
+
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_PATH);
+
+        $this->paths()->resolveFile('Brand');
+    }
+
     public function testRejectsPathTraversal(): void
     {
         $this->expectException(ImageRejectedException::class);

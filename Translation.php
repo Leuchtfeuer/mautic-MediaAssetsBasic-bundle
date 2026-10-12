@@ -96,6 +96,8 @@ final class Translation
 
     public const COLLAPSE_FOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.collapse_folder';
 
+    public const MOVE_FAILED = 'mautic.plugin.leuchtfeuermediaassetsbasic.move_failed';
+
     /**
      * @return array<string, string>
      */
@@ -127,6 +129,7 @@ final class Translation
             'folderCreateFailed'    => self::FOLDER_CREATE_FAILED,
             'expandFolder'          => self::EXPAND_FOLDER,
             'collapseFolder'        => self::COLLAPSE_FOLDER,
+            'moveFailed'            => self::MOVE_FAILED,
         ];
     }
 }

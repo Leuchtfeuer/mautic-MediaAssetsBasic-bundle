@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createFolder, importUrl, listFolders, listImages, uploadFile } from './api';
+import { createFolder, importUrl, listFolders, listImages, moveImage, uploadFile } from './api';
 import type { AssetSession, FileProgress, FolderNode, MediaImage, PickerConfig, PickerMessages } from './types';
 import './picker.css';
 
@@ -29,6 +29,7 @@ const fallbackMessages: PickerMessages = {
   folderCreateFailed: 'The folder could not be created.',
   expandFolder: 'Expand folder',
   collapseFolder: 'Collapse folder',
+  moveFailed: 'The image could not be moved.',
 };
 
 function text(config: PickerConfig): PickerMessages {
@@ -75,29 +76,69 @@ function ancestorPaths(folderPath: string): string[] {
   return paths;
 }
 
+function parentFolderPath(imagePath: string): string {
+  const slash = imagePath.lastIndexOf('/');
+
+  return slash < 0 ? '' : imagePath.slice(0, slash);
+}
+
 function FolderRows({
   node,
   depth,
   selected,
   expanded,
   messages,
+  draggingImagePath,
+  dropTargetFolder,
   onSelect,
   onToggle,
+  onDropTarget,
+  onMoveToFolder,
 }: {
   node: FolderNode;
   depth: number;
   selected: string;
   expanded: Set<string>;
   messages: PickerMessages;
+  draggingImagePath: string | null;
+  dropTargetFolder: string | null;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
+  onDropTarget: (path: string | null) => void;
+  onMoveToFolder: (folderPath: string, imagePath: string) => void;
 }): JSX.Element {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
+  const canDrop = null !== draggingImagePath && parentFolderPath(draggingImagePath) !== node.path;
+  const isDropTarget = canDrop && dropTargetFolder === node.path;
 
   return (
     <>
-      <div className="lf-media-assets__folder-row" style={{ paddingLeft: `${4 + depth * 16}px` }}>
+      <div
+        className={isDropTarget ? 'lf-media-assets__folder-row is-drop-target' : 'lf-media-assets__folder-row'}
+        style={{ paddingLeft: `${4 + depth * 16}px` }}
+        onDragOver={(event) => {
+          if (!canDrop) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          onDropTarget(node.path);
+        }}
+        onDragLeave={() => {
+          if (dropTargetFolder === node.path) {
+            onDropTarget(null);
+          }
+        }}
+        onDrop={(event) => {
+          if (!canDrop || !draggingImagePath) {
+            return;
+          }
+          event.preventDefault();
+          onDropTarget(null);
+          onMoveToFolder(node.path, draggingImagePath);
+        }}
+      >
         {hasChildren ? (
           <button
             type="button"
@@ -129,8 +170,12 @@ function FolderRows({
           selected={selected}
           expanded={expanded}
           messages={messages}
+          draggingImagePath={draggingImagePath}
+          dropTargetFolder={dropTargetFolder}
           onSelect={onSelect}
           onToggle={onToggle}
+          onDropTarget={onDropTarget}
+          onMoveToFolder={onMoveToFolder}
         />
       ))}
     </>
@@ -158,6 +203,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [folderError, setFolderError] = useState('');
   const [treeVersion, setTreeVersion] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']));
+  const [draggingImagePath, setDraggingImagePath] = useState<string | null>(null);
+  const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
 
   useEffect(() => {
     setExpanded((current) => {
@@ -316,6 +363,26 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     });
   }
 
+  async function moveImageToFolder(folderPath: string, imagePath: string): Promise<void> {
+    try {
+      const moved = await moveImage(config, imagePath, folderPath);
+      setTreeVersion((value) => value + 1);
+      setError('');
+      if (parentFolderPath(imagePath) === path) {
+        await refreshImages(page);
+      }
+      const movedFrom = images.find((row) => row.path === imagePath);
+      if (movedFrom && selected === movedFrom.url) {
+        setSelected(moved.url);
+      }
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : messages.moveFailed);
+    } finally {
+      setDraggingImagePath(null);
+      setDropTargetFolder(null);
+    }
+  }
+
   return (
     <div className="lf-media-assets" role="presentation">
       <div className="lf-media-assets__dialog" role="dialog" aria-label={messages.images}>
@@ -413,8 +480,12 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   selected={path}
                   expanded={expanded}
                   messages={messages}
+                  draggingImagePath={draggingImagePath}
+                  dropTargetFolder={dropTargetFolder}
                   onSelect={selectFolder}
                   onToggle={toggleFolder}
+                  onDropTarget={setDropTargetFolder}
+                  onMoveToFolder={(folderPath, imagePath) => void moveImageToFolder(folderPath, imagePath)}
                 />
               )}
             </div>
@@ -448,6 +519,16 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   type="button"
                   key={image.url}
                   className={selected === image.url ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData('text/plain', image.path);
+                    event.dataTransfer.effectAllowed = 'move';
+                    setDraggingImagePath(image.path);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingImagePath(null);
+                    setDropTargetFolder(null);
+                  }}
                   onClick={() => setSelected(image.url)}
                   onDoubleClick={() => session.select(image.url)}
                 >

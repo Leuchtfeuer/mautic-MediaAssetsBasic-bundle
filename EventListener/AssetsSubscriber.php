@@ -59,6 +59,7 @@ final readonly class AssetsSubscriber implements EventSubscriberInterface
             'importUrl'        => $this->router->generate('leuchtfeuer_media_assets_basic_image_import'),
             'foldersUrl'       => $this->router->generate('leuchtfeuer_media_assets_basic_folder_list'),
             'createFolderUrl'  => $this->router->generate('leuchtfeuer_media_assets_basic_folder_create'),
+            'moveUrl'          => $this->router->generate('leuchtfeuer_media_assets_basic_image_move'),
             'messages'         => $messages,
         ];
 

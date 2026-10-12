@@ -250,6 +250,20 @@
   gap: 2px;
   min-height: 32px;
   padding-right: 8px;
+  border-radius: 4px;
+}
+
+.lf-media-assets__folder-row.is-drop-target {
+  background: #d0e2ff;
+  outline: 1px dashed #0f62fe;
+}
+
+.lf-media-assets__tile[draggable="true"] {
+  cursor: grab;
+}
+
+.lf-media-assets__tile[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .lf-media-assets__folder-toggle {
