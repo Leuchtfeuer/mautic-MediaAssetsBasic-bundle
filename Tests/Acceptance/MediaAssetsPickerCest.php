@@ -21,13 +21,13 @@ final class MediaAssetsPickerCest
         $this->ensureMediaAssetsPluginEnabled($I);
     }
 
-    public function _after(): void
+    public function _after(AcceptanceTester $I): void
     {
         if ('' !== $this->seedName) {
-            $this->deleteImages(pathinfo($this->seedName, PATHINFO_FILENAME));
+            $this->deleteImages($I, pathinfo($this->seedName, PATHINFO_FILENAME));
         }
         if ('' !== $this->uploadName) {
-            $this->deleteImages(pathinfo($this->uploadName, PATHINFO_FILENAME));
+            $this->deleteImages($I, pathinfo($this->uploadName, PATHINFO_FILENAME));
             $upload = codecept_data_dir($this->uploadName);
             if (is_file($upload)) {
                 unlink($upload);
@@ -38,7 +38,7 @@ final class MediaAssetsPickerCest
     public function doubleClickInsertsAListedImage(AcceptanceTester $I): void
     {
         $this->seedName = 'lf-media-seed-'.uniqid().'.png';
-        $this->writeImage($this->seedName);
+        $this->writeImage($I, $this->seedName);
 
         $this->openPageBuilder($I);
         $this->openCustomImagePicker($I);

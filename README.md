@@ -58,11 +58,117 @@ Inside those builders it opens wherever GrapesJS asks for an image:
 
 Double-click a tile to insert it. A single click only highlights the tile. One successful upload highlights that tile and does not insert it until you double-click. Images are stored in `media/images`, so they keep rendering after the plugin is unpublished.
 
+## File & folder index (design)
+
+The filesystem remains the canonical, human-readable layout. The **picker and list API read only from the database index** — no `scandir` or Symfony Finder on the HTTP request path.
+
+### Data source: database vs disk
+
+| Context | Folder tree and file list |
+|--------|---------------------------|
+| **Picker, list API (HTTP)** | **Database only.** Recursive file counts in the tree also come from the database. |
+| **Upload, move, create folder, delete** | Write to disk and **update the index in the same request**. |
+| **Console index command** | Walks **disk** — fill gaps, reconcile, optional full reindex (`--all`). |
+
+Manual disk changes (copying a file, `mkdir` outside the API) appear in the UI after the index command runs (default adds missing rows; `--all` performs a full reconcile).
+
+### Index on upload and other operations
+
+After a successful write to disk:
+
+- **Upload:** upsert folders along the path, insert/upsert the file; metadata from `ImageInspector` (**mime, width, height, bytes**, plus **file mtime** for change detection).
+- **Move:** update `relative_path` / folder relation in the database.
+- **Create folder:** insert the folder row after `mkdir`.
+- **Delete** file or folder (when exposed in the API): soft-delete in the database in the same request (see below).
+
+Dimensions and technical metadata are **not** read during picker requests — they come from the index (populated on upload and by the command).
+
+### Soft delete
+
+- File missing on disk: **do not** remove the index row; set **`missing_since`** (nullable datetime).
+- File back on disk: clear **`missing_since`** and refresh metadata (upload, move, or command).
+- **Picker:** only rows with **`missing_since IS NULL`**. Soft-deleted files are not listed.
+
+### Console index command
+
+Command name follows plugin conventions (e.g. `mautic:…:index-media`).
+
+**Default (without `--all`):**
+
+1. Walk the media root (include **empty** folders; **do not** follow symlinks).
+2. **On disk, not in DB** → index (inspect including dimensions).
+3. **In DB, missing on disk** → soft delete (`missing_since`).
+4. **Both exist** but **mtime/bytes** differ (or stored dimensions missing) → re-index that file only.
+5. **Folders on disk without a DB row** → insert (including empty folders).
+6. Non-images, dotfiles, unreadable files → **skip** without aborting the run.
+
+**`--all`:** full tree walk; re-inspect all files; align folder tree with disk; apply or clear soft delete according to disk state.
+
+**`--dry-run`:** same logic as the active mode (default or `--all`) but **no database writes** — log a summary of changes only.
+
+The command is a **safety net and initial backfill**, not the primary mechanism for day-to-day operation (that is the request path plus upload).
+
+### Schema (minimum for the index story)
+
+Unique key: **`relative_path`** (separate folder and file tables, or equivalent model).
+
+**Folder:** `id`, `parent_id`, `relative_path` (unique), `name`, timestamps.
+
+**File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `missing_since` (nullable), timestamps.
+
+**Later (out of scope for the first index story):** UUID, checksum, usage references, path aliases, renditions root outside the browsable tree.
+
+### Picker / API
+
+- Files in a folder: from the database, same pagination as today.
+- Folder tree: from the database; **`count` is recursive** (files in the whole subtree, as today).
+- SVG in the picker: existing context rule (Referer); SVG may exist on disk and in the index even when the picker filters it out.
+
+### Acceptance criteria (agreed)
+
+1. After **upload**, the file is in the index with dimensions; the picker shows it **without** filesystem inspect on the request.
+2. **Default command:** adds disk files/folders missing from the DB; soft-deletes index rows whose files are missing on disk; when nothing changed, **no logical state change**.
+3. A **second default run** with unchanged disk and DB → no logical change to state or metadata.
+4. **`--all`:** full reindex including soft delete; metadata may be re-read but stays the same if files did not change.
+5. **`--dry-run`:** does not write to the database.
+6. Picker list/tree: **database only**; functional tests use a **mocked repository** (no Finder/scandir).
+7. Soft-deleted files **do not** appear in the picker.
+
+### Out of scope (first index story)
+
+- Event-based indexing, on-demand re-scan from the UI.
+- Checksum, deduplication, upload duplicate resolution.
+- Renditions, versions, usage, path aliases.
+- UI changes beyond the data source (same folder/file listing as today).
+
+### Performance
+
+No formal performance acceptance criteria in the first story — expensive dimension reads happen on **upload** and during the **command**, not in the picker.
+
 ## Troubleshooting
 
 Make sure the plugin is installed and published. If it does not appear after adding the folder, run `bin/console cache:clear` and then `bin/console mautic:plugins:reload`.
 
 ## Development
+
+After pulling changes that add or alter Doctrine entities, reload plugins so Mautic creates or updates the index tables:
+
+```bash
+bin/console cache:clear
+bin/console mautic:plugins:reload
+```
+
+### Media index command
+
+Backfill or reconcile the database index from disk:
+
+```bash
+bin/console mautic:media-assets-basic:index-media
+bin/console mautic:media-assets-basic:index-media --dry-run
+bin/console mautic:media-assets-basic:index-media --all
+```
+
+Day-to-day uploads and folder operations update the index in the same request; the command is mainly for initial migration, manual disk changes, and repair.
 
 The picker is a React app in `Assets/js/src`. Mautic loads the built files `Assets/dist/picker.js` and `Assets/dist/picker.css`, so those files are committed and must be rebuilt after a change to the source.
 

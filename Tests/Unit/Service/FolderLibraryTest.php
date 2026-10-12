@@ -4,26 +4,45 @@ declare(strict_types=1);
 
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Mautic\CoreBundle\Helper\CoreParametersHelper;
 use Mautic\CoreBundle\Helper\PathsHelper;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFolderRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\FolderLibrary;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
-use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaIndex;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 final class FolderLibraryTest extends TestCase
 {
     private string $directory = '';
 
+    /** @var MediaAssetFolderRepository&MockObject */
+    private MockObject $folders;
+
+    /** @var MediaAssetFileRepository&MockObject */
+    private MockObject $files;
+
+    /** @var EntityManagerInterface&MockObject */
+    private MockObject $entityManager;
+
     protected function setUp(): void
     {
         $directory = sys_get_temp_dir().'/lf-media-folders-'.bin2hex(random_bytes(4));
         mkdir($directory);
         $this->directory = $directory;
+
+        $this->folders       = $this->createMock(MediaAssetFolderRepository::class);
+        $this->files         = $this->createMock(MediaAssetFileRepository::class);
+        $this->entityManager = $this->createMock(EntityManagerInterface::class);
     }
 
     protected function tearDown(): void
@@ -45,14 +64,17 @@ final class FolderLibraryTest extends TestCase
         rmdir($this->directory);
     }
 
-    public function testBuildsATreeWithRecursiveImageCounts(): void
+    public function testBuildsATreeWithRecursiveImageCountsFromTheIndex(): void
     {
-        $storage = new ImageStorage(new ImageInspector());
-        mkdir($this->directory.'/Brand/Campaign', 0775, true);
-        $storage->store($this->directory, 'root.png', $this->png());
-        $storage->store($this->directory.'/Brand', 'brand.png', $this->png(), 'Brand');
-        $storage->store($this->directory.'/Brand/Campaign', 'campaign.png', $this->png(), 'Brand/Campaign');
-        file_put_contents($this->directory.'/notes.txt', 'skip');
+        $brand    = $this->folder('Brand', 'Brand', null);
+        $campaign = $this->folder('Campaign', 'Brand/Campaign', $brand);
+
+        $this->folders->method('findActiveFolders')->willReturn([$brand, $campaign]);
+        $this->files->method('findActiveFiles')->willReturn([
+            $this->indexedFile('root.png'),
+            $this->indexedFile('Brand/brand.png'),
+            $this->indexedFile('Brand/Campaign/campaign.png'),
+        ]);
 
         $tree = $this->library()->tree('Home');
 
@@ -66,8 +88,33 @@ final class FolderLibraryTest extends TestCase
         $this->assertSame(1, $tree->children[0]->children[0]->count);
     }
 
+    public function testNestsFoldersByRelativePathEvenWhenParentAssociationIsMissing(): void
+    {
+        $test = $this->folder('test', 'test', null);
+        $ttt  = $this->folder('ttt', 'test/ttt', null);
+
+        $this->folders->method('findActiveFolders')->willReturn([$test, $ttt]);
+        $this->files->method('findActiveFiles')->willReturn([
+            $this->indexedFile('test/a.png'),
+            $this->indexedFile('test/ttt/b.png'),
+        ]);
+
+        $tree = $this->library()->tree('Home');
+
+        $this->assertCount(1, $tree->children);
+        $this->assertSame('test', $tree->children[0]->path);
+        $this->assertSame(2, $tree->children[0]->count);
+        $this->assertCount(1, $tree->children[0]->children);
+        $this->assertSame('test/ttt', $tree->children[0]->children[0]->path);
+        $this->assertSame(1, $tree->children[0]->children[0]->count);
+    }
+
     public function testCreatesAFolderUnderTheCurrentPath(): void
     {
+        $this->folders->method('findOneByRelativePath')->willReturn(null);
+        $this->entityManager->expects($this->atLeastOnce())->method('persist');
+        $this->entityManager->expects($this->once())->method('flush');
+
         $created = $this->library()->create('', 'Campaign 2026');
 
         $this->assertSame('Campaign-2026', $created->name);
@@ -75,20 +122,20 @@ final class FolderLibraryTest extends TestCase
         $this->assertDirectoryExists($this->directory.'/Campaign-2026');
     }
 
-    public function testSkipsHiddenDirectoriesAndTheirImages(): void
+    public function testOmitsHiddenFoldersFromTheTree(): void
     {
-        $storage = new ImageStorage(new ImageInspector());
-        mkdir($this->directory.'/.hidden', 0775, true);
-        mkdir($this->directory.'/Brand', 0775, true);
-        $storage->store($this->directory.'/.hidden', 'secret.png', $this->png(), '.hidden');
-        $storage->store($this->directory.'/Brand', 'brand.png', $this->png(), 'Brand');
+        $visible = $this->folder('Brand', 'Brand', null);
+
+        $this->folders->method('findActiveFolders')->willReturn([$visible]);
+        $this->files->method('findActiveFiles')->willReturn([
+            $this->indexedFile('Brand/brand.png'),
+        ]);
 
         $tree = $this->library()->tree('Home');
 
         $this->assertSame(1, $tree->count);
         $this->assertCount(1, $tree->children);
         $this->assertSame('Brand', $tree->children[0]->name);
-        $this->assertSame(['Brand'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\FolderNode $child): string => $child->path, $tree->children));
     }
 
     public function testRejectsCreatingAHiddenFolderName(): void
@@ -108,14 +155,37 @@ final class FolderLibraryTest extends TestCase
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');
 
-        return new FolderLibrary(new MediaPath(new ImageUrls($helper, $parameters)), new ImageInspector());
+        $paths = new MediaPath(new ImageUrls($helper, $parameters));
+
+        return new FolderLibrary(
+            $paths,
+            $this->folders,
+            $this->files,
+            new MediaIndex($paths, new ImageInspector(), $this->folders, $this->files, $this->entityManager),
+        );
     }
 
-    private function png(): string
+    private function folder(string $name, string $relativePath, ?MediaAssetFolder $parent): MediaAssetFolder
     {
-        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);
-        $this->assertIsString($png);
+        $folder = new MediaAssetFolder();
+        $folder->setName($name)
+            ->setRelativePath($relativePath)
+            ->setParent($parent);
 
-        return $png;
+        return $folder;
+    }
+
+    private function indexedFile(string $relativePath): MediaAssetFile
+    {
+        $file = new MediaAssetFile();
+        $file->setRelativePath($relativePath)
+            ->setFilename(basename($relativePath))
+            ->setMime('image/png')
+            ->setWidth(1)
+            ->setHeight(1)
+            ->setBytes(10)
+            ->setFileMtime(1);
+
+        return $file;
     }
 }

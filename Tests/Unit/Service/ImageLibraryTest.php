@@ -4,113 +4,60 @@ declare(strict_types=1);
 
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 
-use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
-use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
-use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 final class ImageLibraryTest extends TestCase
 {
-    private string $directory;
+    /** @var MediaAssetFileRepository&MockObject */
+    private MockObject $files;
 
     protected function setUp(): void
     {
-        $this->directory = sys_get_temp_dir().'/lf-media-assets-'.uniqid('', true);
-        mkdir($this->directory);
+        $this->files = $this->createMock(MediaAssetFileRepository::class);
     }
 
-    protected function tearDown(): void
+    public function testListsImagesFromTheRepository(): void
     {
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($files as $file) {
-            if (!$file instanceof \SplFileInfo) {
-                continue;
-            }
-            $pathname = $file->getPathname();
-            $file->isDir() ? rmdir($pathname) : unlink($pathname);
-        }
-        rmdir($this->directory);
-    }
+        $newer = $this->file('newer.png', 'newer.png', 2, 2, 100, 200);
+        $older = $this->file('older.png', 'older.png', 2, 2, 100, 100);
 
-    public function testListsOnlyImagesInTheTopDirectoryNewestFirst(): void
-    {
-        $storage = new ImageStorage(new ImageInspector());
-        $older   = $storage->store($this->directory, 'older.png', $this->png());
-        $newer   = $storage->store($this->directory, 'newer.png', $this->png());
-        touch($this->directory.'/'.$older->name, time() - 120);
-        touch($this->directory.'/'.$newer->name, time());
-        file_put_contents($this->directory.'/notes.txt', 'not an image');
-        mkdir($this->directory.'/nested');
-        file_put_contents($this->directory.'/nested/hidden.png', $this->png());
+        $this->files->expects($this->once())
+            ->method('listInFolder')
+            ->with('', 1, 24, false)
+            ->willReturn(['images' => [$newer, $older], 'total' => 2]);
 
-        $page = (new ImageLibrary(new ImageInspector()))->listImages($this->directory, 1, 24);
+        $page = (new ImageLibrary($this->files))->listImages('', 1, 24);
 
         $this->assertSame(2, $page['total']);
-        $this->assertSame([$newer->name, $older->name], array_map(static fn (ListedImage $image): string => $image->name, $page['images']));
+        $this->assertSame(['newer.png', 'older.png'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage $image) => $image->name, $page['images']));
     }
 
-    public function testReturnsOnlyTheRequestedPageOfValidImages(): void
+    public function testPassesAllowSvgToTheRepository(): void
     {
-        $storage = new ImageStorage(new ImageInspector());
-        $oldest  = $storage->store($this->directory, 'oldest.png', $this->png());
-        $middle  = $storage->store($this->directory, 'middle.png', $this->png());
-        $newest  = $storage->store($this->directory, 'newest.png', $this->png());
-        touch($this->directory.'/'.$oldest->name, time() - 180);
-        touch($this->directory.'/'.$middle->name, time() - 60);
-        touch($this->directory.'/'.$newest->name, time());
-        file_put_contents($this->directory.'/notes.txt', 'not an image');
+        $this->files->expects($this->once())
+            ->method('listInFolder')
+            ->with('Brand', 2, 10, true)
+            ->willReturn(['images' => [], 'total' => 0]);
 
-        $library = new ImageLibrary(new ImageInspector());
-        $first   = $library->listImages($this->directory, 1, 2);
-        $second  = $library->listImages($this->directory, 2, 2);
-
-        $this->assertSame(3, $first['total']);
-        $this->assertSame([$newest->name, $middle->name], array_map(static fn (ListedImage $image): string => $image->name, $first['images']));
-        $this->assertSame(3, $second['total']);
-        $this->assertSame([$oldest->name], array_map(static fn (ListedImage $image): string => $image->name, $second['images']));
+        (new ImageLibrary($this->files))->listImages('Brand', 2, 10, true);
     }
 
-    public function testRejectsAFileThatIsNotAnImage(): void
+    private function file(string $filename, string $relativePath, int $width, int $height, int $bytes, int $mtime): MediaAssetFile
     {
-        $this->expectException(ImageRejectedException::class);
+        $file = new MediaAssetFile();
+        $file->setFilename($filename)
+            ->setRelativePath($relativePath)
+            ->setMime(str_ends_with($filename, '.svg') ? ImageInspector::SVG_MIME : 'image/png')
+            ->setWidth($width)
+            ->setHeight($height)
+            ->setBytes($bytes)
+            ->setFileMtime($mtime);
 
-        (new ImageStorage(new ImageInspector()))->store($this->directory, 'photo.jpg', 'not an image');
-    }
-
-    public function testListsSvgFilesOnlyWhenSvgIsAllowed(): void
-    {
-        $storage = new ImageStorage(new ImageInspector());
-        $storage->store($this->directory, 'icon.svg', $this->svg(), '', true);
-        $storage->store($this->directory, 'photo.png', $this->png());
-
-        $library = new ImageLibrary(new ImageInspector());
-        $without = $library->listImages($this->directory, 1, 24, '', false);
-        $with    = $library->listImages($this->directory, 1, 24, '', true);
-
-        $this->assertSame(['photo.png'], array_map(static fn (ListedImage $image): string => $image->name, $without['images']));
-        $this->assertSame(1, $without['total']);
-        $this->assertEqualsCanonicalizing(
-            ['photo.png', 'icon.svg'],
-            array_map(static fn (ListedImage $image): string => $image->name, $with['images']),
-        );
-        $this->assertSame(2, $with['total']);
-    }
-
-    private function svg(): string
-    {
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"><rect width="12" height="8" fill="#000"/></svg>';
-    }
-
-    private function png(): string
-    {
-        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);
-        $this->assertIsString($png);
-
-        return $png;
+        return $file;
     }
 }

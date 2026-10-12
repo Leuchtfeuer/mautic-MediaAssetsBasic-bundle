@@ -5,26 +5,52 @@ declare(strict_types=1);
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use Mautic\CoreBundle\Helper\InputHelper;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\MediaIndexer;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\FolderNode;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFolderRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 
 final readonly class FolderLibrary
 {
     public function __construct(
         private MediaPath $paths,
-        private ImageInspector $inspector,
+        private MediaAssetFolderRepository $folders,
+        private MediaAssetFileRepository $files,
+        private MediaIndexer $index,
     ) {
     }
 
     public function tree(string $homeLabel): FolderNode
     {
-        $root = $this->paths->root();
-        if (!is_dir($root)) {
-            return new FolderNode($homeLabel, '', 0);
+        $activeFolders = array_values(array_filter(
+            $this->folders->findActiveFolders(),
+            static fn (MediaAssetFolder $folder): bool => !MediaIndexPath::isHiddenRelativePath($folder->getRelativePath()),
+        ));
+
+        /** @var array<string, list<MediaAssetFolder>> $byParentPath */
+        $byParentPath = [];
+        foreach ($activeFolders as $folder) {
+            // Parent comes from the canonical relative path, not the Doctrine association
+            // (parent_id can lag until a reconcile run repairs it).
+            $parentPath                  = MediaIndexPath::parentRelative($folder->getRelativePath());
+            $byParentPath[$parentPath][] = $folder;
         }
 
-        return $this->node($homeLabel, '', $root);
+        foreach ($byParentPath as $parentPath => $children) {
+            usort(
+                $children,
+                static fn (MediaAssetFolder $a, MediaAssetFolder $b): int => strnatcasecmp($a->getName(), $b->getName()),
+            );
+            $byParentPath[$parentPath] = $children;
+        }
+
+        $counts = $this->recursiveImageCounts($this->files->findActiveFiles());
+
+        return $this->node($homeLabel, '', $byParentPath, $counts);
     }
 
     public function create(?string $parentRelative, string $name): FolderNode
@@ -42,66 +68,48 @@ final readonly class FolderLibrary
             throw new ImageRejectedException(Translation::ERROR_DIRECTORY);
         }
 
+        $this->index->registerFolder($relative, $stem);
+
         return new FolderNode($stem, $relative, 0);
     }
 
-    private function node(string $name, string $relative, string $absolute): FolderNode
+    /**
+     * @param array<string, list<MediaAssetFolder>> $byParentPath
+     * @param array<string, int>                    $counts
+     */
+    private function node(string $name, string $relative, array $byParentPath, array $counts): FolderNode
     {
         $children = [];
-        $entries  = scandir($absolute);
-        if (false === $entries) {
-            return new FolderNode($name, $relative, 0);
+        foreach ($byParentPath[$relative] ?? [] as $folder) {
+            $children[] = $this->node(
+                $folder->getName(),
+                $folder->getRelativePath(),
+                $byParentPath,
+                $counts,
+            );
         }
 
-        $directories = [];
-        foreach ($entries as $entry) {
-            if ($this->isHidden($entry)) {
-                continue;
-            }
-            $path = $absolute.'/'.$entry;
-            if (is_dir($path)) {
-                $directories[] = $entry;
-            }
-        }
-        natcasesort($directories);
-
-        foreach ($directories as $entry) {
-            $childRelative = $this->paths->join($relative, $entry);
-            $children[]    = $this->node($entry, $childRelative, $absolute.'/'.$entry);
-        }
-
-        return new FolderNode($name, $relative, $this->countImages($absolute), $children);
+        return new FolderNode($name, $relative, $counts[$relative] ?? 0, $children);
     }
 
-    private function countImages(string $directory): int
+    /**
+     * @param list<MediaAssetFile> $files
+     *
+     * @return array<string, int>
+     */
+    private function recursiveImageCounts(array $files): array
     {
-        $count   = 0;
-        $entries = scandir($directory);
-        if (false === $entries) {
-            return 0;
+        $counts = ['' => 0];
+        foreach ($files as $file) {
+            ++$counts[''];
+            $folderPath = MediaIndexPath::parentRelative($file->getRelativePath());
+            while ('' !== $folderPath) {
+                $counts[$folderPath] = ($counts[$folderPath] ?? 0) + 1;
+                $folderPath          = MediaIndexPath::parentRelative($folderPath);
+            }
         }
 
-        foreach ($entries as $entry) {
-            if ($this->isHidden($entry)) {
-                continue;
-            }
-            $path = $directory.'/'.$entry;
-            if (is_dir($path)) {
-                $count += $this->countImages($path);
-                continue;
-            }
-            if (!is_file($path)) {
-                continue;
-            }
-            try {
-                $this->inspector->inspectFile($path);
-            } catch (ImageRejectedException) {
-                continue;
-            }
-            ++$count;
-        }
-
-        return $count;
+        return $counts;
     }
 
     private function folderName(string $name): string
@@ -114,10 +122,5 @@ final readonly class FolderLibrary
         }
 
         return substr($stem, 0, 80);
-    }
-
-    private function isHidden(string $entry): bool
-    {
-        return str_starts_with($entry, '.');
     }
 }

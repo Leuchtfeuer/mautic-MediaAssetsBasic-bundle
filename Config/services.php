@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use Mautic\CoreBundle\DependencyInjection\MauticCoreExtension;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\HostResolver;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\MediaIndexer;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\LeuchtfeuerMediaAssetsBasicIntegration;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\DnsHostResolver;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaIndex;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
 return function (ContainerConfigurator $configurator): void {
@@ -22,8 +24,12 @@ return function (ContainerConfigurator $configurator): void {
             'Assets',
             'Contract',
             'DTO',
+            'Repository',
             'Translation.php',
         ])).'}');
+
+    $services->load('MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\Repository\\', '../Repository')
+        ->tag(Doctrine\Bundle\DoctrineBundle\DependencyInjection\Compiler\ServiceRepositoryCompilerPass::REPOSITORY_SERVICE_TAG);
 
     $services->alias(
         'mautic.integration.leuchtfeuermediaassetsbasic',
@@ -31,4 +37,5 @@ return function (ContainerConfigurator $configurator): void {
     );
 
     $services->alias(HostResolver::class, DnsHostResolver::class);
+    $services->alias(MediaIndexer::class, MediaIndex::class);
 };

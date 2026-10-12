@@ -43,31 +43,139 @@ trait MediaAssetsAcceptanceTrait
         return dirname(__DIR__, 5).'/media/images';
     }
 
-    protected function writeImage(string $filename): void
+    protected function writeImage(AcceptanceTester $I, string $filename): void
     {
         $directory = $this->imageDirectory();
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new RuntimeException('The image directory could not be created.');
         }
 
-        $png = base64_decode(self::PNG, true);
-        if (!is_string($png) || false === file_put_contents($directory.'/'.$filename, $png)) {
+        $png  = base64_decode(self::PNG, true);
+        $path = $directory.'/'.$filename;
+        if (!is_string($png) || false === file_put_contents($path, $png)) {
             throw new RuntimeException('The acceptance image could not be written.');
+        }
+
+        // Picker lists from the DB index. Seed every DB the live app may use:
+        // Codeception/.env.test → `test` + prefix; DDEV local.php often → `db` without prefix.
+        $this->indexSeededImage($filename, $path);
+    }
+
+    protected function deleteImages(AcceptanceTester $I, string $prefix): void
+    {
+        $paths = glob($this->imageDirectory().'/'.$prefix.'*');
+        if (is_array($paths)) {
+            foreach ($paths as $path) {
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+        }
+
+        $this->softDeleteIndexedImages($prefix);
+    }
+
+    private function indexSeededImage(string $filename, string $absolutePath): void
+    {
+        $mtime = filemtime($absolutePath);
+        $bytes = filesize($absolutePath);
+        if (false === $mtime || false === $bytes) {
+            throw new RuntimeException('The seeded image metadata could not be read.');
+        }
+
+        $seeded = false;
+        foreach ($this->mediaIndexTargets() as $target) {
+            try {
+                $pdo = $this->pdoFor($target);
+                $sql = sprintf(
+                    'INSERT INTO `%s` (folder_id, relative_path, filename, mime, width, height, bytes, file_mtime, missing_since)
+                     VALUES (NULL, :relative_path, :filename, :mime, 1, 1, :bytes, :file_mtime, NULL)
+                     ON DUPLICATE KEY UPDATE mime = VALUES(mime), width = VALUES(width), height = VALUES(height),
+                       bytes = VALUES(bytes), file_mtime = VALUES(file_mtime), missing_since = NULL',
+                    $target['table'],
+                );
+                $statement = $pdo->prepare($sql);
+                $statement->execute([
+                    'relative_path' => $filename,
+                    'filename'      => $filename,
+                    'mime'          => 'image/png',
+                    'bytes'         => $bytes,
+                    'file_mtime'    => $mtime,
+                ]);
+                $seeded = true;
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        if (!$seeded) {
+            throw new RuntimeException('The seeded image could not be written to any media index table.');
         }
     }
 
-    protected function deleteImages(string $prefix): void
+    private function softDeleteIndexedImages(string $prefix): void
     {
-        $paths = glob($this->imageDirectory().'/'.$prefix.'*');
-        if (!is_array($paths)) {
-            return;
-        }
-
-        foreach ($paths as $path) {
-            if (is_file($path)) {
-                unlink($path);
+        $missingSince = (new DateTimeImmutable())->format('Y-m-d H:i:s');
+        foreach ($this->mediaIndexTargets() as $target) {
+            try {
+                $pdo       = $this->pdoFor($target);
+                $statement = $pdo->prepare(sprintf(
+                    'UPDATE `%s` SET missing_since = :missing_since WHERE relative_path LIKE :prefix',
+                    $target['table'],
+                ));
+                $statement->execute([
+                    'missing_since' => $missingSince,
+                    'prefix'        => $prefix.'%',
+                ]);
+            } catch (Throwable) {
+                continue;
             }
         }
+    }
+
+    /**
+     * @return list<array{dsn: string, user: string, pass: string, table: string}>
+     */
+    private function mediaIndexTargets(): array
+    {
+        $host   = $_ENV['DB_HOST'] ?? 'db';
+        $user   = $_ENV['DB_USER'] ?? 'db';
+        $pass   = $_ENV['DB_PASSWD'] ?? 'db';
+        $prefix = $_ENV['MAUTIC_TABLE_PREFIX'] ?? $_ENV['MAUTIC_DB_PREFIX'] ?? 'test_';
+        $testDb = $_ENV['DB_NAME'] ?? 'test';
+
+        $targets = [
+            [
+                'dsn'   => sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', $host, $testDb),
+                'user'  => $user,
+                'pass'  => $pass,
+                'table' => $prefix.'lf_media_asset_files',
+            ],
+            // DDEV / local.php default: database `db`, no table prefix.
+            [
+                'dsn'   => sprintf('mysql:host=%s;dbname=db;charset=utf8mb4', $host),
+                'user'  => $user,
+                'pass'  => $pass,
+                'table' => 'lf_media_asset_files',
+            ],
+        ];
+
+        $unique = [];
+        foreach ($targets as $target) {
+            $unique[$target['dsn'].'|'.$target['table']] = $target;
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * @param array{dsn: string, user: string, pass: string, table: string} $target
+     */
+    private function pdoFor(array $target): PDO
+    {
+        return new PDO($target['dsn'], $target['user'], $target['pass'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        ]);
     }
 
     protected function openPageBuilder(AcceptanceTester $I): void

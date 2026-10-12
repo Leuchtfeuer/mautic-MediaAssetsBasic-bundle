@@ -5,62 +5,36 @@ declare(strict_types=1);
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
-use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
-use Symfony\Component\Finder\Finder;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
 
 final readonly class ImageLibrary
 {
-    public function __construct(private ImageInspector $inspector)
+    public function __construct(private MediaAssetFileRepository $files)
     {
     }
 
     /**
      * @return array{images: list<ListedImage>, total: int}
      */
-    public function listImages(string $directory, int $page, int $limit, string $relativeDirectory = '', bool $allowSvg = false): array
+    public function listImages(string $folderRelative, int $page, int $limit, bool $allowSvg = false): array
     {
-        $page  = max(1, $page);
-        $limit = max(1, $limit);
-        if (!is_dir($directory)) {
-            return ['images' => [], 'total' => 0];
-        }
-
-        $finder = new Finder();
-        $finder->files()->in($directory)->depth('== 0')->sortByModifiedTime()->reverseSorting();
-
-        $images = [];
-        $total  = 0;
-        $offset = ($page - 1) * $limit;
-        foreach ($finder as $file) {
-            try {
-                $inspected = $this->inspector->inspectFile($file->getPathname(), $allowSvg);
-            } catch (ImageRejectedException) {
-                continue;
-            }
-
-            $bytes = $file->getSize();
-            if (false === $bytes) {
-                continue;
-            }
-
-            if ($total >= $offset && count($images) < $limit) {
-                $name     = $file->getFilename();
-                $path     = '' === $relativeDirectory ? $name : $relativeDirectory.'/'.$name;
-                $images[] = new ListedImage(
-                    $name,
-                    $inspected->width,
-                    $inspected->height,
-                    $bytes,
-                    $path,
-                );
-            }
-
-            ++$total;
-        }
+        $page   = max(1, $page);
+        $limit  = max(1, $limit);
+        $listed = $this->files->listInFolder($folderRelative, $page, $limit, $allowSvg);
 
         return [
-            'images' => $images,
-            'total'  => $total,
+            'images' => array_map(
+                static fn (MediaAssetFile $file): ListedImage => new ListedImage(
+                    $file->getFilename(),
+                    $file->getWidth(),
+                    $file->getHeight(),
+                    $file->getBytes(),
+                    $file->getRelativePath(),
+                ),
+                $listed['images'],
+            ),
+            'total' => $listed['total'],
         ];
     }
 }
