@@ -445,7 +445,8 @@
 }
 
 .lf-media-assets__tile {
-  border: 1px solid #e0e0e0;
+  box-sizing: border-box;
+  border: 2px solid #e0e0e0;
   background: #fff;
   padding: 0;
   text-align: left;
@@ -453,7 +454,7 @@
 }
 
 .lf-media-assets__tile.is-selected {
-  border: 2px solid #0f62fe;
+  border-color: #0f62fe;
 }
 
 .lf-media-assets__preview {
@@ -471,12 +472,25 @@
 }
 
 .lf-media-assets__meta {
-  padding: 8px;
+  display: block;
+  padding: 12px;
   font-size: 13px;
+  line-height: 18px;
 }
 
-.lf-media-assets__meta small {
+.lf-media-assets__meta-name {
   display: block;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lf-media-assets__meta-size {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 16px;
   color: #525252;
 }
 

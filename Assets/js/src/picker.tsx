@@ -579,8 +579,10 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                 >
                   <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
                   <span className="lf-media-assets__meta">
-                    {image.name}
-                    <small>{`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}</small>
+                    <span className="lf-media-assets__meta-name">{image.name}</span>
+                    <span className="lf-media-assets__meta-size">
+                      {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
+                    </span>
                   </span>
                 </button>
               ))}
