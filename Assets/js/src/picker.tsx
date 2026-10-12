@@ -290,6 +290,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
   const crumbs = breadcrumb(path, messages.home);
+  const crumbPaths = ancestorPaths(path);
 
   async function refreshImages(nextPage = 1): Promise<MediaImage[]> {
     setPage(nextPage);
@@ -552,14 +553,32 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
               void sendFiles(Array.from(event.dataTransfer.files));
             }}
           >
-            <div className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
-              {crumbs.map((crumb, index) => (
-                <span key={`${crumb}-${index}`}>
-                  {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
-                  <span className={index === crumbs.length - 1 ? 'is-current' : undefined}>{crumb}</span>
-                </span>
-              ))}
-            </div>
+            <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
+              {crumbs.map((crumb, index) => {
+                const crumbPath = crumbPaths[index] ?? '';
+                const isCurrent = index === crumbs.length - 1;
+
+                return (
+                  <span key={`${crumbPath}-${index}`}>
+                    {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
+                    {isCurrent ? (
+                      <span className="is-current" aria-current="page">{crumb}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="lf-media-assets__breadcrumb-link"
+                        onClick={() => {
+                          setPath(crumbPath);
+                          setPage(1);
+                        }}
+                      >
+                        {crumb}
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+            </nav>
             {error && (
               <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
             )}

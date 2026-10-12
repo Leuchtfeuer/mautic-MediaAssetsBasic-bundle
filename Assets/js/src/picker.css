@@ -434,6 +434,23 @@
   font-weight: 600;
 }
 
+.lf-media-assets__breadcrumb-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f62fe;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.lf-media-assets__breadcrumb-link:hover,
+.lf-media-assets__breadcrumb-link:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
 .lf-media-assets__breadcrumb-sep {
   color: #a8a8a8;
 }
