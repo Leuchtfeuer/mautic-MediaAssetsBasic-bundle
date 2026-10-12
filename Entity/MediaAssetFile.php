@@ -64,6 +64,11 @@ class MediaAssetFile
         return $this->id;
     }
 
+    public function setId(?int $id): void
+    {
+        $this->id = $id;
+    }
+
     public function getFolder(): ?MediaAssetFolder
     {
         return $this->folder;

@@ -48,6 +48,11 @@ class MediaAssetFolder
         return $this->id;
     }
 
+    public function setId(?int $id): void
+    {
+        $this->id = $id;
+    }
+
     public function getParent(): ?self
     {
         return $this->parent;
