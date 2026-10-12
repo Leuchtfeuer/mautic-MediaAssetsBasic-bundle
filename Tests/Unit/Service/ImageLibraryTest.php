@@ -34,7 +34,7 @@ final class ImageLibraryTest extends TestCase
         $page = (new ImageLibrary($this->files))->listImages('', 1, 24);
 
         $this->assertSame(2, $page['total']);
-        $this->assertSame(['newer.png', 'older.png'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage $image) => $image->name, $page['images']));
+        $this->assertSame(['newer.png', 'older.png'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage $image): string => $image->name, $page['images']));
     }
 
     public function testPassesAllowSvgToTheRepository(): void
