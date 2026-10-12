@@ -82,6 +82,30 @@ function parentFolderPath(imagePath: string): string {
   return slash < 0 ? '' : imagePath.slice(0, slash);
 }
 
+function DismissibleAlert({
+  message,
+  onDismiss,
+  closeLabel,
+  title,
+}: {
+  message: string;
+  onDismiss: () => void;
+  closeLabel: string;
+  title?: string;
+}): JSX.Element {
+  return (
+    <div className="lf-media-assets__alert" role="alert">
+      <div className="lf-media-assets__alert-content">
+        {title ? <strong>{title}</strong> : null}
+        <p className="lf-media-assets__error">{message}</p>
+      </div>
+      <button type="button" className="lf-media-assets__alert-dismiss" aria-label={closeLabel} onClick={onDismiss}>
+        ×
+      </button>
+    </div>
+  );
+}
+
 function FolderRows({
   node,
   depth,
@@ -284,6 +308,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         stored.push(result.image);
       }
     }
+    setProgress((current) => current.filter((row) => row.error));
     if (stored.length > 0) {
       await refreshImages(1);
       setTreeVersion((value) => value + 1);
@@ -298,7 +323,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     setProgress((current) => [...current, { id, name: url, progress: 0.4 }]);
     try {
       const image = await importUrl(config, url, path);
-      setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1 } : row)));
+      setProgress((current) => current.filter((row) => row.id !== id));
       await refreshImages(1);
       setTreeVersion((value) => value + 1);
       setSelected(image.url);
@@ -383,6 +408,10 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     }
   }
 
+  function dismissProgress(id: string): void {
+    setProgress((current) => current.filter((row) => row.id !== id));
+  }
+
   return (
     <div className="lf-media-assets" role="presentation">
       <div className="lf-media-assets__dialog" role="dialog" aria-label={messages.images}>
@@ -425,12 +454,20 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         {progress.length > 0 && (
           <div className="lf-media-assets__progress">
             {progress.map((row) => (
-              <div className="lf-media-assets__progress-row" key={row.id}>
-                <strong>{row.name}</strong>
-                {row.error ? <div className="lf-media-assets__error">{row.error}</div> : (
+              row.error ? (
+                <DismissibleAlert
+                  key={row.id}
+                  title={row.name}
+                  message={row.error}
+                  closeLabel={messages.close}
+                  onDismiss={() => dismissProgress(row.id)}
+                />
+              ) : (
+                <div className="lf-media-assets__progress-row" key={row.id}>
+                  <strong>{row.name}</strong>
                   <div className="lf-media-assets__bar"><span style={{ width: `${Math.round(row.progress * 100)}%` }} /></div>
-                )}
-              </div>
+                </div>
+              )
             ))}
           </div>
         )}
@@ -469,7 +506,13 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   }}
                 />
                 <button type="button" onClick={() => void submitFolder()}>{messages.createFolder}</button>
-                {folderError && <div className="lf-media-assets__error">{folderError}</div>}
+                {folderError && (
+                  <DismissibleAlert
+                    message={folderError}
+                    closeLabel={messages.close}
+                    onDismiss={() => setFolderError('')}
+                  />
+                )}
               </div>
             )}
             <div className="lf-media-assets__folders">
@@ -511,7 +554,9 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                 </span>
               ))}
             </div>
-            {error && <p className="lf-media-assets__error">{error}</p>}
+            {error && (
+              <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
+            )}
             {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
             <div className="lf-media-assets__grid">
               {images.map((image) => (

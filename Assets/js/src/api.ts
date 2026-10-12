@@ -88,6 +88,7 @@ export function uploadFile(
       }
     };
     xhr.onload = () => {
+      onProgress(1);
       let payload: UploadResponse = {};
       try {
         payload = JSON.parse(xhr.responseText) as UploadResponse;
