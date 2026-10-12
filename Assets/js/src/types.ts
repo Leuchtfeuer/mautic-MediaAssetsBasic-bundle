@@ -38,6 +38,8 @@ export interface PickerMessages {
   folderNamePlaceholder: string;
   createFolder: string;
   folderCreateFailed: string;
+  expandFolder: string;
+  collapseFolder: string;
 }
 
 export interface PickerConfig {

@@ -27,6 +27,8 @@ const fallbackMessages: PickerMessages = {
   folderNamePlaceholder: 'Folder name',
   createFolder: 'Create',
   folderCreateFailed: 'The folder could not be created.',
+  expandFolder: 'Expand folder',
+  collapseFolder: 'Collapse folder',
 };
 
 function text(config: PickerConfig): PickerMessages {
@@ -59,33 +61,77 @@ function breadcrumb(path: string, home: string): string[] {
   return [home, ...path.split('/')];
 }
 
+function ancestorPaths(folderPath: string): string[] {
+  if ('' === folderPath) {
+    return [''];
+  }
+
+  const parts = folderPath.split('/');
+  const paths = [''];
+  for (let index = 0; index < parts.length; index += 1) {
+    paths.push(parts.slice(0, index + 1).join('/'));
+  }
+
+  return paths;
+}
+
 function FolderRows({
   node,
   depth,
   selected,
+  expanded,
+  messages,
   onSelect,
+  onToggle,
 }: {
   node: FolderNode;
   depth: number;
   selected: string;
+  expanded: Set<string>;
+  messages: PickerMessages;
   onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
 }): JSX.Element {
+  const hasChildren = node.children.length > 0;
+  const isExpanded = expanded.has(node.path);
+
   return (
     <>
-      <button
-        type="button"
-        className={selected === node.path ? 'lf-media-assets__folder is-selected' : 'lf-media-assets__folder'}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
-        onClick={() => onSelect(node.path)}
-      >
-        <span className="lf-media-assets__folder-label">
-          <span className="lf-media-assets__folder-icon" aria-hidden="true" />
-          <span>{node.name}</span>
-        </span>
-        <span className="lf-media-assets__folder-count">{node.count}</span>
-      </button>
-      {node.children.map((child) => (
-        <FolderRows key={child.path} node={child} depth={depth + 1} selected={selected} onSelect={onSelect} />
+      <div className="lf-media-assets__folder-row" style={{ paddingLeft: `${4 + depth * 16}px` }}>
+        {hasChildren ? (
+          <button
+            type="button"
+            className={isExpanded ? 'lf-media-assets__folder-toggle is-open' : 'lf-media-assets__folder-toggle'}
+            aria-expanded={isExpanded}
+            aria-label={isExpanded ? messages.collapseFolder : messages.expandFolder}
+            onClick={() => onToggle(node.path)}
+          />
+        ) : (
+          <span className="lf-media-assets__folder-toggle-slot" aria-hidden="true" />
+        )}
+        <button
+          type="button"
+          className={selected === node.path ? 'lf-media-assets__folder is-selected' : 'lf-media-assets__folder'}
+          onClick={() => onSelect(node.path)}
+        >
+          <span className="lf-media-assets__folder-label">
+            <span className="lf-media-assets__folder-icon" aria-hidden="true" />
+            <span>{node.name}</span>
+          </span>
+          <span className="lf-media-assets__folder-count">{node.count}</span>
+        </button>
+      </div>
+      {hasChildren && isExpanded && node.children.map((child) => (
+        <FolderRows
+          key={child.path}
+          node={child}
+          depth={depth + 1}
+          selected={selected}
+          expanded={expanded}
+          messages={messages}
+          onSelect={onSelect}
+          onToggle={onToggle}
+        />
       ))}
     </>
   );
@@ -111,6 +157,16 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [folderName, setFolderName] = useState('');
   const [folderError, setFolderError] = useState('');
   const [treeVersion, setTreeVersion] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']));
+
+  useEffect(() => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      ancestorPaths(path).forEach((folderPath) => next.add(folderPath));
+
+      return next;
+    });
+  }, [path, treeVersion]);
 
   useEffect(() => {
     let active = true;
@@ -247,6 +303,19 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     setSelected(null);
   }
 
+  function toggleFolder(folderPath: string): void {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
+
+      return next;
+    });
+  }
+
   return (
     <div className="lf-media-assets" role="presentation">
       <div className="lf-media-assets__dialog" role="dialog" aria-label={messages.images}>
@@ -337,7 +406,17 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
               </div>
             )}
             <div className="lf-media-assets__folders">
-              {folder && <FolderRows node={folder} depth={0} selected={path} onSelect={selectFolder} />}
+              {folder && (
+                <FolderRows
+                  node={folder}
+                  depth={0}
+                  selected={path}
+                  expanded={expanded}
+                  messages={messages}
+                  onSelect={selectFolder}
+                  onToggle={toggleFolder}
+                />
+              )}
             </div>
           </aside>
           <div

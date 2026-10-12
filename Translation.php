@@ -92,6 +92,10 @@ final class Translation
 
     public const FOLDER_CREATE_FAILED = 'mautic.plugin.leuchtfeuermediaassetsbasic.folder_create_failed';
 
+    public const EXPAND_FOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.expand_folder';
+
+    public const COLLAPSE_FOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.collapse_folder';
+
     /**
      * @return array<string, string>
      */
@@ -121,6 +125,8 @@ final class Translation
             'folderNamePlaceholder' => self::FOLDER_NAME_PLACEHOLDER,
             'createFolder'          => self::CREATE_FOLDER,
             'folderCreateFailed'    => self::FOLDER_CREATE_FAILED,
+            'expandFolder'          => self::EXPAND_FOLDER,
+            'collapseFolder'        => self::COLLAPSE_FOLDER,
         ];
     }
 }
