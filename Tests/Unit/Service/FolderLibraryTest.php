@@ -88,7 +88,7 @@ final class FolderLibraryTest extends TestCase
         $this->assertSame(1, $tree->count);
         $this->assertCount(1, $tree->children);
         $this->assertSame('Brand', $tree->children[0]->name);
-        $this->assertSame(['Brand'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\FolderNode $child) => $child->path, $tree->children));
+        $this->assertSame(['Brand'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\FolderNode $child): string => $child->path, $tree->children));
     }
 
     public function testRejectsCreatingAHiddenFolderName(): void
