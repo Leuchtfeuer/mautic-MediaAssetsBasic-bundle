@@ -306,6 +306,22 @@
   cursor: grabbing;
 }
 
+.lf-media-assets__drag-count {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 14px;
+  background: #0f62fe;
+  color: #fff;
+  font: 600 14px/28px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
 .lf-media-assets__folder-toggle {
   flex-shrink: 0;
   width: 24px;

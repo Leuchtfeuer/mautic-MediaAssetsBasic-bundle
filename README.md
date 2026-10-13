@@ -56,7 +56,19 @@ Inside those builders it opens wherever GrapesJS asks for an image:
 - Clicking an empty image, or double-clicking an image that is already in the canvas
 - Choosing a background image, including a section's Decorations background and an MJML section or hero `background-url`
 
-Double-click a tile to insert it. A single click only highlights the tile. One successful upload highlights that tile and does not insert it until you double-click. Images are stored in `media/images`, so they keep rendering after the plugin is unpublished.
+Double-click a tile to insert it into the builder. One successful upload selects the new tile(s) and does not insert until you double-click. Images are stored in `media/images`, so they keep rendering after the plugin is unpublished.
+
+### Selection and bulk move
+
+| Action | What it does |
+|--------|----------------|
+| **Click** | Select only that tile. |
+| **Ctrl+click** (Windows/Linux) / **Cmd+click** (macOS) | Add or remove that tile from the selection. |
+| **Shift+click** | Select the range from the last clicked tile to this one (on the current page). |
+| **Drag** a selected tile onto a **folder** in the sidebar | Move all selected images into that folder. Dragging an unselected tile moves only that image. |
+| **Double-click** | Insert that one image into the builder (selection does not change what gets inserted). |
+
+While a bulk move runs, the picker shows a progress bar (`Moving X of Y…`). Changing folder (sidebar or breadcrumb) clears the selection.
 
 ## File & folder index (design)
 

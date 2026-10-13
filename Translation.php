@@ -98,6 +98,8 @@ final class Translation
 
     public const MOVE_FAILED = 'mautic.plugin.leuchtfeuermediaassetsbasic.move_failed';
 
+    public const MOVING = 'mautic.plugin.leuchtfeuermediaassetsbasic.moving';
+
     /**
      * @return array<string, string>
      */
@@ -130,6 +132,7 @@ final class Translation
             'expandFolder'          => self::EXPAND_FOLDER,
             'collapseFolder'        => self::COLLAPSE_FOLDER,
             'moveFailed'            => self::MOVE_FAILED,
+            'moving'                => self::MOVING,
         ];
     }
 }

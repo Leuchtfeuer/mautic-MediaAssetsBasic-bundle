@@ -30,6 +30,7 @@ const fallbackMessages: PickerMessages = {
   expandFolder: 'Expand folder',
   collapseFolder: 'Collapse folder',
   moveFailed: 'The image could not be moved.',
+  moving: 'Moving %done% of %total%…',
 };
 
 function text(config: PickerConfig): PickerMessages {
@@ -112,13 +113,29 @@ function DismissibleAlert({
   );
 }
 
+function parseDraggedImagePaths(raw: string): string[] {
+  if ('' === raw) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((value): value is string => typeof value === 'string' && '' !== value);
+    }
+  } catch {
+    // Legacy / plain single path from text/plain.
+  }
+
+  return [raw];
+}
+
 function FolderRows({
   node,
   depth,
   selected,
   expanded,
   messages,
-  draggingImagePath,
+  draggingImagePaths,
   dropTargetFolder,
   onSelect,
   onToggle,
@@ -130,16 +147,16 @@ function FolderRows({
   selected: string;
   expanded: Set<string>;
   messages: PickerMessages;
-  draggingImagePath: string | null;
+  draggingImagePaths: string[];
   dropTargetFolder: string | null;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
   onDropTarget: (path: string | null) => void;
-  onMoveToFolder: (folderPath: string, imagePath: string) => void;
+  onMoveToFolder: (folderPath: string, imagePaths: string[]) => void;
 }): JSX.Element {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.path);
-  const canDrop = null !== draggingImagePath && parentFolderPath(draggingImagePath) !== node.path;
+  const canDrop = draggingImagePaths.some((imagePath) => parentFolderPath(imagePath) !== node.path);
   const isDropTarget = canDrop && dropTargetFolder === node.path;
 
   return (
@@ -161,12 +178,16 @@ function FolderRows({
           }
         }}
         onDrop={(event) => {
-          if (!canDrop || !draggingImagePath) {
+          const paths = draggingImagePaths.length > 0
+            ? draggingImagePaths
+            : parseDraggedImagePaths(event.dataTransfer.getData('text/plain'));
+          const movable = paths.filter((imagePath) => parentFolderPath(imagePath) !== node.path);
+          if (0 === movable.length) {
             return;
           }
           event.preventDefault();
           onDropTarget(null);
-          onMoveToFolder(node.path, draggingImagePath);
+          onMoveToFolder(node.path, movable);
         }}
       >
         {hasChildren ? (
@@ -200,7 +221,7 @@ function FolderRows({
           selected={selected}
           expanded={expanded}
           messages={messages}
-          draggingImagePath={draggingImagePath}
+          draggingImagePaths={draggingImagePaths}
           dropTargetFolder={dropTargetFolder}
           onSelect={onSelect}
           onToggle={onToggle}
@@ -220,7 +241,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(24);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set());
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState('');
   const urlInput = useRef<HTMLInputElement>(null);
@@ -233,7 +255,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [folderError, setFolderError] = useState('');
   const [treeVersion, setTreeVersion] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']));
-  const [draggingImagePath, setDraggingImagePath] = useState<string | null>(null);
+  const [draggingImagePaths, setDraggingImagePaths] = useState<string[]>([]);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
 
   useEffect(() => {
@@ -319,9 +341,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     if (stored.length > 0) {
       await refreshImages(1);
       setTreeVersion((value) => value + 1);
-      if (stored.length === 1) {
-        setSelected(stored[0].url);
-      }
+      setSelectedPaths(new Set(stored.map((image) => image.path)));
+      setSelectionAnchor(stored[stored.length - 1].path);
     }
   }
 
@@ -333,7 +354,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
       setProgress((current) => current.filter((row) => row.id !== id));
       await refreshImages(1);
       setTreeVersion((value) => value + 1);
-      setSelected(image.url);
+      setSelectedPaths(new Set([image.path]));
+      setSelectionAnchor(image.path);
       setUrl('');
       setUrlOpen(false);
     } catch (reason: unknown) {
@@ -379,7 +401,8 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   function selectFolder(next: string): void {
     setPath(next);
     setPage(1);
-    setSelected(null);
+    setSelectedPaths(new Set());
+    setSelectionAnchor(null);
   }
 
   function toggleFolder(folderPath: string): void {
@@ -395,23 +418,91 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     });
   }
 
-  async function moveImageToFolder(folderPath: string, imagePath: string): Promise<void> {
+  function selectImage(image: MediaImage, index: number, event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): void {
+    const additive = event.metaKey || event.ctrlKey;
+    if (additive) {
+      setSelectedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(image.path)) {
+          next.delete(image.path);
+        } else {
+          next.add(image.path);
+        }
+
+        return next;
+      });
+      setSelectionAnchor(image.path);
+
+      return;
+    }
+
+    if (event.shiftKey && null !== selectionAnchor) {
+      const anchorIndex = images.findIndex((row) => row.path === selectionAnchor);
+      if (anchorIndex >= 0) {
+        const from = Math.min(anchorIndex, index);
+        const to = Math.max(anchorIndex, index);
+        setSelectedPaths(new Set(images.slice(from, to + 1).map((row) => row.path)));
+
+        return;
+      }
+    }
+
+    setSelectedPaths(new Set([image.path]));
+    setSelectionAnchor(image.path);
+  }
+
+  async function moveImagesToFolder(folderPath: string, imagePaths: string[]): Promise<void> {
+    const toMove = imagePaths.filter((imagePath) => parentFolderPath(imagePath) !== folderPath);
+    if (0 === toMove.length) {
+      setDraggingImagePaths([]);
+      setDropTargetFolder(null);
+
+      return;
+    }
+
+    const moveId = `move-${Date.now()}`;
+    const total = toMove.length;
+    setProgress((current) => [
+      ...current,
+      { id: moveId, name: fill(messages.moving, { done: 0, total }), progress: 0 },
+    ]);
+    setDraggingImagePaths([]);
+    setDropTargetFolder(null);
+
+    let done = 0;
     try {
-      const moved = await moveImage(config, imagePath, folderPath);
+      for (const imagePath of toMove) {
+        await moveImage(config, imagePath, folderPath);
+        done += 1;
+        setProgress((current) => current.map((row) => (
+          row.id === moveId
+            ? { ...row, name: fill(messages.moving, { done, total }), progress: done / total }
+            : row
+        )));
+      }
+      setProgress((current) => current.filter((row) => row.id !== moveId));
       setTreeVersion((value) => value + 1);
       setError('');
-      if (parentFolderPath(imagePath) === path) {
+      setSelectedPaths((current) => {
+        const next = new Set(current);
+        toMove.forEach((imagePath) => next.delete(imagePath));
+
+        return next;
+      });
+      if (toMove.some((imagePath) => parentFolderPath(imagePath) === path) || path === folderPath) {
         await refreshImages(page);
       }
-      const movedFrom = images.find((row) => row.path === imagePath);
-      if (movedFrom && selected === movedFrom.url) {
-        setSelected(moved.url);
-      }
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : messages.moveFailed);
-    } finally {
-      setDraggingImagePath(null);
-      setDropTargetFolder(null);
+      const message = reason instanceof Error ? reason.message : messages.moveFailed;
+      setProgress((current) => current.map((row) => (
+        row.id === moveId
+          ? { ...row, name: fill(messages.moving, { done, total }), progress: total > 0 ? done / total : 0, error: message }
+          : row
+      )));
+      setTreeVersion((value) => value + 1);
+      if (done > 0 && toMove.some((imagePath) => parentFolderPath(imagePath) === path)) {
+        await refreshImages(page);
+      }
     }
   }
 
@@ -530,12 +621,12 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   selected={path}
                   expanded={expanded}
                   messages={messages}
-                  draggingImagePath={draggingImagePath}
+                  draggingImagePaths={draggingImagePaths}
                   dropTargetFolder={dropTargetFolder}
                   onSelect={selectFolder}
                   onToggle={toggleFolder}
                   onDropTarget={setDropTargetFolder}
-                  onMoveToFolder={(folderPath, imagePath) => void moveImageToFolder(folderPath, imagePath)}
+                  onMoveToFolder={(folderPath, imagePaths) => void moveImagesToFolder(folderPath, imagePaths)}
                 />
               )}
             </div>
@@ -543,6 +634,9 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
           <div
             className="lf-media-assets__body"
             onDragOver={(event) => {
+              if (draggingImagePaths.length > 0 || !Array.from(event.dataTransfer.types).includes('Files')) {
+                return;
+              }
               event.preventDefault();
               setDragging(true);
             }}
@@ -550,6 +644,9 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
             onDrop={(event) => {
               event.preventDefault();
               setDragging(false);
+              if (draggingImagePaths.length > 0 || 0 === event.dataTransfer.files.length) {
+                return;
+              }
               void sendFiles(Array.from(event.dataTransfer.files));
             }}
           >
@@ -567,10 +664,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                       <button
                         type="button"
                         className="lf-media-assets__breadcrumb-link"
-                        onClick={() => {
-                          setPath(crumbPath);
-                          setPage(1);
-                        }}
+                        onClick={() => selectFolder(crumbPath)}
                       >
                         {crumb}
                       </button>
@@ -584,22 +678,36 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
             )}
             {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
             <div className="lf-media-assets__grid">
-              {images.map((image) => (
+              {images.map((image, index) => (
                 <button
                   type="button"
                   key={image.url}
-                  className={selected === image.url ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                  className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                  aria-selected={selectedPaths.has(image.path)}
                   draggable
                   onDragStart={(event) => {
-                    event.dataTransfer.setData('text/plain', image.path);
+                    const paths = selectedPaths.has(image.path) ? Array.from(selectedPaths) : [image.path];
+                    if (!selectedPaths.has(image.path)) {
+                      setSelectedPaths(new Set([image.path]));
+                      setSelectionAnchor(image.path);
+                    }
+                    event.dataTransfer.setData('text/plain', JSON.stringify(paths));
                     event.dataTransfer.effectAllowed = 'move';
-                    setDraggingImagePath(image.path);
+                    setDraggingImagePaths(paths);
+                    if (paths.length > 1) {
+                      const badge = document.createElement('div');
+                      badge.className = 'lf-media-assets__drag-count';
+                      badge.textContent = String(paths.length);
+                      document.body.appendChild(badge);
+                      event.dataTransfer.setDragImage(badge, 16, 16);
+                      requestAnimationFrame(() => badge.remove());
+                    }
                   }}
                   onDragEnd={() => {
-                    setDraggingImagePath(null);
+                    setDraggingImagePaths([]);
                     setDropTargetFolder(null);
                   }}
-                  onClick={() => setSelected(image.url)}
+                  onClick={(event) => selectImage(image, index, event)}
                   onDoubleClick={() => session.select(image.url)}
                 >
                   <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>

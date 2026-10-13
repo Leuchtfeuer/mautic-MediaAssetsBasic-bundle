@@ -41,6 +41,7 @@ export interface PickerMessages {
   expandFolder: string;
   collapseFolder: string;
   moveFailed: string;
+  moving: string;
 }
 
 export interface PickerConfig {
