@@ -151,7 +151,7 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
 
         $application = new Application($kernel);
         $application->setAutoExit(false);
-        $tester = new CommandTester($application->find('mautic:media-assets-basic:index-media'));
+        $tester = new CommandTester($application->find('leuchtfeuer:media:index-media'));
         $status = $tester->execute($options);
         $this->assertSame(0, $status, $tester->getDisplay());
 

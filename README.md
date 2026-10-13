@@ -91,7 +91,7 @@ Dimensions and technical metadata are **not** read during picker requests — th
 
 ### Console index command
 
-Command name follows plugin conventions (e.g. `mautic:…:index-media`).
+Command name: `leuchtfeuer:media:index-media`.
 
 **Default (without `--all`):**
 
@@ -160,15 +160,16 @@ bin/console mautic:plugins:reload
 
 ### Media index command
 
-Backfill or reconcile the database index from disk:
+`leuchtfeuer:media:index-media` walks `media/images` on disk and reconciles the database index. Day-to-day uploads and folder operations update the index in the same request; this command is mainly for initial migration, manual disk changes, and repair.
 
-```bash
-bin/console mautic:media-assets-basic:index-media
-bin/console mautic:media-assets-basic:index-media --dry-run
-bin/console mautic:media-assets-basic:index-media --all
-```
+| Command | What it does |
+|--------|----------------|
+| `bin/console leuchtfeuer:media:index-media` | Default reconcile: index files/folders that exist on disk but not in the DB; soft-delete index rows missing on disk; re-inspect only when mtime/bytes (or missing dimensions) differ. |
+| `bin/console leuchtfeuer:media:index-media --dry-run` | Same logic as the mode you combine it with (default or `--all`), but **no database writes** — prints a summary of what would change. |
+| `bin/console leuchtfeuer:media:index-media --all` | Full reindex: re-inspect every file on disk, align the folder tree, and apply or clear soft delete according to disk state. |
+| `bin/console leuchtfeuer:media:index-media --all --dry-run` | Preview a full `--all` run without writing to the database. |
 
-Day-to-day uploads and folder operations update the index in the same request; the command is mainly for initial migration, manual disk changes, and repair.
+See [Console index command](#console-index-command) above for the full reconcile rules.
 
 The picker is a React app in `Assets/js/src`. Mautic loads the built files `Assets/dist/picker.js` and `Assets/dist/picker.css`, so those files are committed and must be rebuilt after a change to the source.
 

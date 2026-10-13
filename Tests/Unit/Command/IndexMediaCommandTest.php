@@ -25,7 +25,7 @@ final class IndexMediaCommandTest extends TestCase
 
         $application = new Application();
         $application->addCommand(new IndexMediaCommand($this->index));
-        $this->tester = new CommandTester($application->find('mautic:media-assets-basic:index-media'));
+        $this->tester = new CommandTester($application->find('leuchtfeuer:media:index-media'));
     }
 
     public function testDefaultRunPassesFalseFlags(): void

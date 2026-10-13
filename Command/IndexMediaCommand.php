@@ -14,7 +14,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
-    name: 'mautic:media-assets-basic:index-media',
+    name: 'leuchtfeuer:media:index-media',
     description: 'Index media files and folders from disk into the database (reconcile / backfill).',
 )]
 final class IndexMediaCommand extends Command
