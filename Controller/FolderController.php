@@ -8,6 +8,7 @@ use Mautic\CoreBundle\Controller\AjaxController;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\Config;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\FolderLibrary;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\LandingPagePickerContext;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -15,13 +16,16 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class FolderController extends AjaxController
 {
-    public function listAction(Config $config, FolderLibrary $folders): JsonResponse
+    public function listAction(Request $request, Config $config, FolderLibrary $folders): JsonResponse
     {
         if (!$config->isPublished()) {
             return $this->unavailable();
         }
 
-        $tree = $folders->tree($this->translator->trans(Translation::HOME));
+        $tree = $folders->tree(
+            $this->translator->trans(Translation::HOME),
+            LandingPagePickerContext::requestAllowsSvg($request),
+        );
 
         return $this->sendJsonResponse(['folder' => $tree->toArray()]);
     }

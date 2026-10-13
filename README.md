@@ -134,7 +134,7 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 
 - Files in a folder: from the database, same pagination as today.
 - Folder tree: from the database; **`count` is recursive** (files in the whole subtree, as today).
-- SVG in the picker: existing context rule (Referer); SVG may exist on disk and in the index even when the picker filters it out.
+- SVG in the picker: existing context rule (Referer / landing-page builder). SVG may exist on disk and in the index even when the picker filters it out. **Folder counts** follow the same rule: SVGs are included only in the landing-page picker; email builders exclude them so the badge matches the visible grid.
 
 ### Acceptance criteria (agreed)
 

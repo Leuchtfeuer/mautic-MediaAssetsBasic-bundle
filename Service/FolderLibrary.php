@@ -24,7 +24,7 @@ final readonly class FolderLibrary
     ) {
     }
 
-    public function tree(string $homeLabel): FolderNode
+    public function tree(string $homeLabel, bool $allowSvg = false): FolderNode
     {
         $activeFolders = array_values(array_filter(
             $this->folders->findActiveFolders(),
@@ -48,7 +48,16 @@ final readonly class FolderLibrary
             $byParentPath[$parentPath] = $children;
         }
 
-        $counts = $this->recursiveImageCounts($this->files->findActiveFiles());
+        $files = $this->files->findActiveFiles();
+        if (!$allowSvg) {
+            // Match the picker list: emails hide SVGs, so folder counts must too.
+            $files = array_values(array_filter(
+                $files,
+                static fn (MediaAssetFile $file): bool => ImageInspector::SVG_MIME !== $file->getMime(),
+            ));
+        }
+
+        $counts = $this->recursiveImageCounts($files);
 
         return $this->node($homeLabel, '', $byParentPath, $counts);
     }

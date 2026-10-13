@@ -138,6 +138,25 @@ final class FolderLibraryTest extends TestCase
         $this->assertSame('Brand', $tree->children[0]->name);
     }
 
+    public function testExcludesSvgFromFolderCountsUnlessAllowed(): void
+    {
+        $brand = $this->folder('Brand', 'Brand', null);
+
+        $this->folders->method('findActiveFolders')->willReturn([$brand]);
+        $this->files->method('findActiveFiles')->willReturn([
+            $this->indexedFile('Brand/brand.png'),
+            $this->indexedFile('Brand/icon.svg', ImageInspector::SVG_MIME),
+        ]);
+
+        $withoutSvg = $this->library()->tree('Home', false);
+        $this->assertSame(1, $withoutSvg->count);
+        $this->assertSame(1, $withoutSvg->children[0]->count);
+
+        $withSvg = $this->library()->tree('Home', true);
+        $this->assertSame(2, $withSvg->count);
+        $this->assertSame(2, $withSvg->children[0]->count);
+    }
+
     public function testRejectsCreatingAHiddenFolderName(): void
     {
         $this->expectException(ImageRejectedException::class);
@@ -175,12 +194,12 @@ final class FolderLibraryTest extends TestCase
         return $folder;
     }
 
-    private function indexedFile(string $relativePath): MediaAssetFile
+    private function indexedFile(string $relativePath, string $mime = 'image/png'): MediaAssetFile
     {
         $file = new MediaAssetFile();
         $file->setRelativePath($relativePath)
             ->setFilename(basename($relativePath))
-            ->setMime('image/png')
+            ->setMime($mime)
             ->setWidth(1)
             ->setHeight(1)
             ->setBytes(10)
