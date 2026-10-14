@@ -650,75 +650,77 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
               void sendFiles(Array.from(event.dataTransfer.files));
             }}
           >
-            <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
-              {crumbs.map((crumb, index) => {
-                const crumbPath = crumbPaths[index] ?? '';
-                const isCurrent = index === crumbs.length - 1;
+            <div className="lf-media-assets__scroll">
+              <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
+                {crumbs.map((crumb, index) => {
+                  const crumbPath = crumbPaths[index] ?? '';
+                  const isCurrent = index === crumbs.length - 1;
 
-                return (
-                  <span key={`${crumbPath}-${index}`}>
-                    {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
-                    {isCurrent ? (
-                      <span className="is-current" aria-current="page">{crumb}</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="lf-media-assets__breadcrumb-link"
-                        onClick={() => selectFolder(crumbPath)}
-                      >
-                        {crumb}
-                      </button>
-                    )}
-                  </span>
-                );
-              })}
-            </nav>
-            {error && (
-              <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
-            )}
-            {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
-            <div className="lf-media-assets__grid">
-              {images.map((image, index) => (
-                <button
-                  type="button"
-                  key={image.url}
-                  className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
-                  aria-selected={selectedPaths.has(image.path)}
-                  draggable
-                  onDragStart={(event) => {
-                    const paths = selectedPaths.has(image.path) ? Array.from(selectedPaths) : [image.path];
-                    if (!selectedPaths.has(image.path)) {
-                      setSelectedPaths(new Set([image.path]));
-                      setSelectionAnchor(image.path);
-                    }
-                    event.dataTransfer.setData('text/plain', JSON.stringify(paths));
-                    event.dataTransfer.effectAllowed = 'move';
-                    setDraggingImagePaths(paths);
-                    if (paths.length > 1) {
-                      const badge = document.createElement('div');
-                      badge.className = 'lf-media-assets__drag-count';
-                      badge.textContent = String(paths.length);
-                      document.body.appendChild(badge);
-                      event.dataTransfer.setDragImage(badge, 16, 16);
-                      requestAnimationFrame(() => badge.remove());
-                    }
-                  }}
-                  onDragEnd={() => {
-                    setDraggingImagePaths([]);
-                    setDropTargetFolder(null);
-                  }}
-                  onClick={(event) => selectImage(image, index, event)}
-                  onDoubleClick={() => session.select(image.url)}
-                >
-                  <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
-                  <span className="lf-media-assets__meta">
-                    <span className="lf-media-assets__meta-name">{image.name}</span>
-                    <span className="lf-media-assets__meta-size">
-                      {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
+                  return (
+                    <span key={`${crumbPath}-${index}`}>
+                      {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
+                      {isCurrent ? (
+                        <span className="is-current" aria-current="page">{crumb}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="lf-media-assets__breadcrumb-link"
+                          onClick={() => selectFolder(crumbPath)}
+                        >
+                          {crumb}
+                        </button>
+                      )}
                     </span>
-                  </span>
-                </button>
-              ))}
+                  );
+                })}
+              </nav>
+              {error && (
+                <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
+              )}
+              {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
+              <div className="lf-media-assets__grid">
+                {images.map((image, index) => (
+                  <button
+                    type="button"
+                    key={image.url}
+                    className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                    aria-selected={selectedPaths.has(image.path)}
+                    draggable
+                    onDragStart={(event) => {
+                      const paths = selectedPaths.has(image.path) ? Array.from(selectedPaths) : [image.path];
+                      if (!selectedPaths.has(image.path)) {
+                        setSelectedPaths(new Set([image.path]));
+                        setSelectionAnchor(image.path);
+                      }
+                      event.dataTransfer.setData('text/plain', JSON.stringify(paths));
+                      event.dataTransfer.effectAllowed = 'move';
+                      setDraggingImagePaths(paths);
+                      if (paths.length > 1) {
+                        const badge = document.createElement('div');
+                        badge.className = 'lf-media-assets__drag-count';
+                        badge.textContent = String(paths.length);
+                        document.body.appendChild(badge);
+                        event.dataTransfer.setDragImage(badge, 16, 16);
+                        requestAnimationFrame(() => badge.remove());
+                      }
+                    }}
+                    onDragEnd={() => {
+                      setDraggingImagePaths([]);
+                      setDropTargetFolder(null);
+                    }}
+                    onClick={(event) => selectImage(image, index, event)}
+                    onDoubleClick={() => session.select(image.url)}
+                  >
+                    <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
+                    <span className="lf-media-assets__meta">
+                      <span className="lf-media-assets__meta-name">{image.name}</span>
+                      <span className="lf-media-assets__meta-size">
+                        {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
             {dragging && <div className="lf-media-assets__drop">{messages.drop}</div>}
           </div>

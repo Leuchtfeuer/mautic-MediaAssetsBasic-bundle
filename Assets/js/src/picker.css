@@ -434,7 +434,16 @@
 
 .lf-media-assets__body {
   position: relative;
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lf-media-assets__scroll {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 16px;
 }
@@ -530,12 +539,15 @@
 .lf-media-assets__drop {
   position: absolute;
   inset: 8px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(15, 98, 254, 0.12);
   border: 2px dashed #0f62fe;
   font-size: 20px;
+  /* Visual only — keep drag/scroll events on the body/scroll layer underneath. */
+  pointer-events: none;
 }
 
 .lf-media-assets__empty {
