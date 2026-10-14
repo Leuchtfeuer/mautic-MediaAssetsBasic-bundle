@@ -29,12 +29,26 @@ function headers(json = false): Headers {
   return result;
 }
 
-export async function listImages(config: PickerConfig, page: number, limit: number, path: string): Promise<ListResponse> {
+export async function listImages(
+  config: PickerConfig,
+  page: number,
+  limit: number,
+  path: string,
+  query = '',
+  everywhere = false,
+): Promise<ListResponse> {
   const url = new URL(config.listUrl, window.location.origin);
   url.searchParams.set('page', String(page));
   url.searchParams.set('limit', String(limit));
   if ('' !== path) {
     url.searchParams.set('path', path);
+  }
+  const trimmed = query.trim();
+  if (trimmed.length >= 2) {
+    url.searchParams.set('q', trimmed);
+    if (everywhere) {
+      url.searchParams.set('everywhere', '1');
+    }
   }
   const response = await fetch(url.toString(), { headers: headers() });
   if (!response.ok) {

@@ -17,11 +17,30 @@ final readonly class ImageLibrary
     /**
      * @return array{images: list<ListedImage>, total: int}
      */
-    public function listImages(string $folderRelative, int $page, int $limit, bool $allowSvg = false): array
-    {
-        $page   = max(1, $page);
-        $limit  = max(1, $limit);
-        $listed = $this->files->listInFolder($folderRelative, $page, $limit, $allowSvg);
+    public function listImages(
+        string $folderRelative,
+        int $page,
+        int $limit,
+        bool $allowSvg = false,
+        string $query = '',
+        bool $everywhere = false,
+    ): array {
+        $page  = max(1, $page);
+        $limit = max(1, $limit);
+
+        if (FilenameSearch::isActive($query)) {
+            $searchRoot = $everywhere ? '' : $folderRelative;
+            $listed     = $this->files->searchInTree(
+                $searchRoot,
+                $query,
+                $folderRelative,
+                $page,
+                $limit,
+                $allowSvg,
+            );
+        } else {
+            $listed = $this->files->listInFolder($folderRelative, $page, $limit, $allowSvg);
+        }
 
         return [
             'images' => array_map(

@@ -36,17 +36,21 @@ final class ImageController extends AjaxController
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
 
-        $page     = max(1, $request->query->getInt('page', 1));
-        $limit    = min(100, max(1, $request->query->getInt('limit', 24)));
-        $allowSvg = $pickerContext->allowSvg($request);
-        $listed   = $library->listImages($directory['relative'], $page, $limit, $allowSvg);
+        $page       = max(1, $request->query->getInt('page', 1));
+        $limit      = min(100, max(1, $request->query->getInt('limit', 24)));
+        $allowSvg   = $pickerContext->allowSvg($request);
+        $query      = trim($request->query->getString('q'));
+        $everywhere = $request->query->getBoolean('everywhere');
+        $listed     = $library->listImages($directory['relative'], $page, $limit, $allowSvg, $query, $everywhere);
 
         return $this->sendJsonResponse([
-            'page'   => $page,
-            'limit'  => $limit,
-            'path'   => $directory['relative'],
-            'total'  => $listed['total'],
-            'images' => array_map(fn (ListedImage $image): array => $this->present($image, $urls), $listed['images']),
+            'page'        => $page,
+            'limit'       => $limit,
+            'path'        => $directory['relative'],
+            'q'           => $query,
+            'everywhere'  => $everywhere,
+            'total'       => $listed['total'],
+            'images'      => array_map(fn (ListedImage $image): array => $this->present($image, $urls), $listed['images']),
         ]);
     }
 

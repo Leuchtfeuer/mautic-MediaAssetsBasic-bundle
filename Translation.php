@@ -100,39 +100,60 @@ final class Translation
 
     public const MOVING = 'mautic.plugin.leuchtfeuermediaassetsbasic.moving';
 
+    public const SEARCH_PLACEHOLDER = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_placeholder';
+
+    public const SEARCH_CLEAR = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_clear';
+
+    public const SEARCH_SCOPE = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_scope';
+
+    public const SEARCH_SCOPE_EVERYWHERE = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_scope_everywhere';
+
+    public const SEARCH_EVERYWHERE = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_everywhere';
+
+    public const SEARCH_EMPTY = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_empty';
+
+    public const SEARCH_EMPTY_EVERYWHERE = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_empty_everywhere';
+
     /**
      * @return array<string, string>
      */
     public static function picker(): array
     {
         return [
-            'images'                => self::IMAGES,
-            'importFromUrl'         => self::IMPORT_FROM_URL,
-            'upload'                => self::UPLOAD,
-            'close'                 => self::CLOSE,
-            'fetch'                 => self::FETCH,
-            'urlPlaceholder'        => self::URL_PLACEHOLDER,
-            'loadFailed'            => self::LOAD_FAILED,
-            'importFailed'          => self::IMPORT_FAILED,
-            'empty'                 => self::EMPTY,
-            'drop'                  => self::DROP,
-            'itemsPerPage'          => self::ITEMS_PER_PAGE,
-            'range'                 => self::RANGE,
-            'page'                  => self::PAGE,
-            'byte'                  => self::BYTE,
-            'kilobyte'              => self::KILOBYTE,
-            'megabyte'              => self::MEGABYTE,
-            'uploadFailed'          => self::ERROR_UPLOAD,
-            'folders'               => self::FOLDERS,
-            'home'                  => self::HOME,
-            'newFolder'             => self::NEW_FOLDER,
-            'folderNamePlaceholder' => self::FOLDER_NAME_PLACEHOLDER,
-            'createFolder'          => self::CREATE_FOLDER,
-            'folderCreateFailed'    => self::FOLDER_CREATE_FAILED,
-            'expandFolder'          => self::EXPAND_FOLDER,
-            'collapseFolder'        => self::COLLAPSE_FOLDER,
-            'moveFailed'            => self::MOVE_FAILED,
-            'moving'                => self::MOVING,
+            'images'                  => self::IMAGES,
+            'importFromUrl'           => self::IMPORT_FROM_URL,
+            'upload'                  => self::UPLOAD,
+            'close'                   => self::CLOSE,
+            'fetch'                   => self::FETCH,
+            'urlPlaceholder'          => self::URL_PLACEHOLDER,
+            'loadFailed'              => self::LOAD_FAILED,
+            'importFailed'            => self::IMPORT_FAILED,
+            'empty'                   => self::EMPTY,
+            'drop'                    => self::DROP,
+            'itemsPerPage'            => self::ITEMS_PER_PAGE,
+            'range'                   => self::RANGE,
+            'page'                    => self::PAGE,
+            'byte'                    => self::BYTE,
+            'kilobyte'                => self::KILOBYTE,
+            'megabyte'                => self::MEGABYTE,
+            'uploadFailed'            => self::ERROR_UPLOAD,
+            'folders'                 => self::FOLDERS,
+            'home'                    => self::HOME,
+            'newFolder'               => self::NEW_FOLDER,
+            'folderNamePlaceholder'   => self::FOLDER_NAME_PLACEHOLDER,
+            'createFolder'            => self::CREATE_FOLDER,
+            'folderCreateFailed'      => self::FOLDER_CREATE_FAILED,
+            'expandFolder'            => self::EXPAND_FOLDER,
+            'collapseFolder'          => self::COLLAPSE_FOLDER,
+            'moveFailed'              => self::MOVE_FAILED,
+            'moving'                  => self::MOVING,
+            'searchPlaceholder'       => self::SEARCH_PLACEHOLDER,
+            'searchClear'             => self::SEARCH_CLEAR,
+            'searchScope'             => self::SEARCH_SCOPE,
+            'searchScopeEverywhere'   => self::SEARCH_SCOPE_EVERYWHERE,
+            'searchEverywhere'        => self::SEARCH_EVERYWHERE,
+            'searchEmpty'             => self::SEARCH_EMPTY,
+            'searchEmptyEverywhere'   => self::SEARCH_EMPTY_EVERYWHERE,
         ];
     }
 }

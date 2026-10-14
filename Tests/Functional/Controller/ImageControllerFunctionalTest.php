@@ -304,6 +304,217 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->assertRejected((string) $this->client->getResponse()->getContent(), Response::HTTP_BAD_REQUEST, 'That folder path is not allowed.');
     }
 
+    public function testSearchFindsFilesInFolderAndSubfoldersByName(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'Campaign'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $childName = 'merch';
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => $folderName, 'name' => $childName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName.'/'.$childName;
+
+        $this->uploadPng('bitmotion-hero.png', $folderName);
+        $this->uploadPng('other.png', $folderName);
+        $this->uploadPng('bitmotion-merch.png', $folderName.'/'.$childName);
+        $this->uploadPng('bitmotion-root.png');
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q=bitmotion',
+        );
+        $scoped = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($scoped);
+        $scopedImages = $scoped['images'] ?? null;
+        $this->assertIsArray($scopedImages);
+        $scopedPaths = array_column($scopedImages, 'path');
+        $this->assertContains($folderName.'/bitmotion-hero.png', $scopedPaths);
+        $this->assertContains($folderName.'/'.$childName.'/bitmotion-merch.png', $scopedPaths);
+        $this->assertNotContains($folderName.'/other.png', $scopedPaths);
+        $this->assertNotContains('bitmotion-root.png', $scopedPaths);
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q=bitmotion&everywhere=1',
+        );
+        $everywhere = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($everywhere);
+        $everywhereImages = $everywhere['images'] ?? null;
+        $this->assertIsArray($everywhereImages);
+        $everywherePaths = array_column($everywhereImages, 'path');
+        $this->assertContains('bitmotion-root.png', $everywherePaths);
+        $this->assertContains($folderName.'/bitmotion-hero.png', $everywherePaths);
+    }
+
+    public function testShortSearchQueryKeepsPlainFolderListing(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'ShortQ'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $this->uploadPng('alpha.png', $folderName);
+        $this->uploadPng('beta.png', $folderName);
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q=a',
+        );
+        $list = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($list);
+        $images = $list['images'] ?? null;
+        $this->assertIsArray($images);
+        $names = array_column($images, 'name');
+        sort($names);
+        $this->assertSame(['alpha.png', 'beta.png'], $names);
+        $this->assertSame(2, $list['total'] ?? null);
+    }
+
+    public function testSearchMultiWordAndRequiresAllTokens(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'AndQ'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $this->uploadPng('hero-spring-2026.png', $folderName);
+        $this->uploadPng('hero-only.png', $folderName);
+        $this->uploadPng('spring-only.png', $folderName);
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q='.rawurlencode('spring hero'),
+        );
+        $list = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($list);
+        $images = $list['images'] ?? null;
+        $this->assertIsArray($images);
+        $names = array_column($images, 'name');
+        $this->assertSame(['hero-spring-2026.png'], $names);
+        $this->assertSame(1, $list['total'] ?? null);
+    }
+
+    public function testSearchOrdersByTierAndPrefersCurrentFolder(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'Tier'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+
+        $childName = 'nested';
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => $folderName, 'name' => $childName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName.'/'.$childName;
+
+        // Query "spring": prefix (current) / prefix (nested) / token / substring
+        $this->uploadPng('spring-banner.png', $folderName);
+        $this->uploadPng('spring-nested.png', $folderName.'/'.$childName);
+        $this->uploadPng('hero-spring.png', $folderName.'/'.$childName);
+        $this->uploadPng('myspring.png', $folderName);
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q=spring',
+        );
+        $list = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($list);
+        $images = $list['images'] ?? null;
+        $this->assertIsArray($images);
+        $names = array_column($images, 'name');
+
+        $this->assertSame('spring-banner.png', $names[0] ?? null, 'Current-folder prefix should beat nested prefix');
+        $this->assertSame('spring-nested.png', $names[1] ?? null);
+        $this->assertSame('hero-spring.png', $names[2] ?? null);
+        $this->assertSame('myspring.png', $names[3] ?? null);
+    }
+
+    public function testSearchEmptyResultReturnsZeroImages(): void
+    {
+        $this->publishPlugin();
+
+        $folderName = 'EmptyQ'.bin2hex(random_bytes(3));
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/folders',
+            [],
+            [],
+            $this->ajaxHeaders() + ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['parent' => '', 'name' => $folderName], JSON_THROW_ON_ERROR),
+        );
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->createdFolders[] = $folderName;
+        $this->uploadPng('present.png', $folderName);
+
+        $this->client->request(
+            Request::METHOD_GET,
+            '/s/media-assets-basic/images?limit=50&path='.rawurlencode($folderName).'&q=missingname',
+        );
+        $list = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($list);
+        $this->assertSame([], $list['images'] ?? null);
+        $this->assertSame(0, $list['total'] ?? null);
+        $this->assertSame('missingname', $list['q'] ?? null);
+        $this->assertFalse($list['everywhere'] ?? true);
+    }
+
     public function testListRejectsPathTraversal(): void
     {
         $this->publishPlugin();

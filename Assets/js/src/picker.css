@@ -448,6 +448,92 @@
   padding: 16px;
 }
 
+.lf-media-assets__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 0 8px;
+}
+
+.lf-media-assets__search-icon {
+  position: absolute;
+  left: 10px;
+  color: #6f6f6f;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.lf-media-assets__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 36px 0 32px;
+  border: 1px solid #8d8d8d;
+  background: #fff;
+  color: #161616;
+  font: inherit;
+  font-size: 14px;
+}
+
+.lf-media-assets__search-input:focus {
+  outline: 2px solid #0f62fe;
+  outline-offset: -2px;
+  border-color: #0f62fe;
+}
+
+.lf-media-assets__search-clear {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #525252;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lf-media-assets__search-clear:hover,
+.lf-media-assets__search-clear:focus-visible {
+  color: #161616;
+  outline: none;
+}
+
+.lf-media-assets__search-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: #525252;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.lf-media-assets__search-everywhere {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f62fe;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.lf-media-assets__search-everywhere:hover,
+.lf-media-assets__search-everywhere:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
 .lf-media-assets__breadcrumb {
   margin: 0 0 12px;
   color: #6f6f6f;
@@ -534,6 +620,17 @@
   font-size: 12px;
   line-height: 16px;
   color: #525252;
+}
+
+.lf-media-assets__meta-path {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #6f6f6f;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lf-media-assets__drop {

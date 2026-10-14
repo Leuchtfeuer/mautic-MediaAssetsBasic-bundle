@@ -7,6 +7,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository;
 use Doctrine\Persistence\ManagerRegistry;
 use Mautic\CoreBundle\Entity\CommonRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\FilenameSearch;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 
 /**
@@ -71,6 +72,77 @@ class MediaAssetFileRepository extends CommonRepository
             'images' => $images,
             'total'  => $total,
         ];
+    }
+
+    /**
+     * Search filenames under a folder tree (or everywhere when $folderRelative is '').
+     * Ranking (tier / current-folder / mtime / id) is applied in PHP for correct tier rules.
+     *
+     * @return array{images: list<MediaAssetFile>, total: int}
+     */
+    public function searchInTree(
+        string $folderRelative,
+        string $query,
+        string $currentFolderRelative,
+        int $page,
+        int $limit,
+        bool $allowSvg,
+    ): array {
+        $page   = max(1, $page);
+        $limit  = max(1, $limit);
+        $tokens = FilenameSearch::queryTokens($query);
+        if ([] === $tokens) {
+            return ['images' => [], 'total' => 0];
+        }
+
+        $qb = $this->createQueryBuilder('f')
+            ->where('f.missingSince IS NULL');
+
+        if ('' !== $folderRelative) {
+            $qb->andWhere('f.relativePath LIKE :treePrefix')
+                ->setParameter('treePrefix', $this->escapeLike($folderRelative).'/%');
+        }
+
+        if (!$allowSvg) {
+            $qb->andWhere('f.mime != :svg')
+                ->setParameter('svg', ImageInspector::SVG_MIME);
+        }
+
+        foreach ($tokens as $index => $token) {
+            $qb->andWhere('LOWER(f.filename) LIKE :token'.$index)
+                ->setParameter('token'.$index, '%'.$this->escapeLike(mb_strtolower($token)).'%');
+        }
+
+        /** @var list<MediaAssetFile> $matches */
+        $matches = $qb->getQuery()->getResult();
+
+        usort(
+            $matches,
+            static fn (MediaAssetFile $left, MediaAssetFile $right): int => FilenameSearch::compare(
+                $left->getFilename(),
+                $left->getRelativePath(),
+                $left->getFileMtime(),
+                $left->getId(),
+                $right->getFilename(),
+                $right->getRelativePath(),
+                $right->getFileMtime(),
+                $right->getId(),
+                $query,
+                $currentFolderRelative,
+            )
+        );
+
+        $total = count($matches);
+
+        return [
+            'images' => array_slice($matches, ($page - 1) * $limit, $limit),
+            'total'  => $total,
+        ];
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return addcslashes($value, '%_\\');
     }
 
     /**

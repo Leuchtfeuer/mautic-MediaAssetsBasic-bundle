@@ -42,6 +42,13 @@ export interface PickerMessages {
   collapseFolder: string;
   moveFailed: string;
   moving: string;
+  searchPlaceholder: string;
+  searchClear: string;
+  searchScope: string;
+  searchScopeEverywhere: string;
+  searchEverywhere: string;
+  searchEmpty: string;
+  searchEmptyEverywhere: string;
 }
 
 export interface PickerConfig {

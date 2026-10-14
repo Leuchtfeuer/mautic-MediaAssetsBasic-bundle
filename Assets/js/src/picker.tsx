@@ -31,7 +31,17 @@ const fallbackMessages: PickerMessages = {
   collapseFolder: 'Collapse folder',
   moveFailed: 'The image could not be moved.',
   moving: 'Moving %done% of %total%…',
+  searchPlaceholder: 'Search images…',
+  searchClear: 'Clear search',
+  searchScope: 'Searching in "%folder%" and subfolders',
+  searchScopeEverywhere: 'Searching everywhere',
+  searchEverywhere: 'Search everywhere',
+  searchEmpty: 'No files matching %query% in "%folder%" and subfolders',
+  searchEmptyEverywhere: 'No files matching %query%',
 };
+
+const SEARCH_MIN_CHARS = 2;
+const SEARCH_DEBOUNCE_MS = 300;
 
 function text(config: PickerConfig): PickerMessages {
   return { ...fallbackMessages, ...config.messages };
@@ -87,6 +97,28 @@ function parentFolderPath(imagePath: string): string {
   const slash = imagePath.lastIndexOf('/');
 
   return slash < 0 ? '' : imagePath.slice(0, slash);
+}
+
+function folderDisplayName(path: string, home: string): string {
+  if ('' === path) {
+    return home;
+  }
+
+  const parts = path.split('/');
+
+  return parts[parts.length - 1] || home;
+}
+
+/** Middle-truncate a folder path for tile display (keeps trailing slash). */
+function truncateFolderPath(folderPath: string, maxLength = 28): string {
+  const withSlash = '' === folderPath ? '' : `${folderPath}/`;
+  if (withSlash.length <= maxLength) {
+    return withSlash;
+  }
+
+  const keep = Math.max(6, Math.floor((maxLength - 1) / 2));
+
+  return `${withSlash.slice(0, keep)}…${withSlash.slice(-keep)}`;
 }
 
 function DismissibleAlert({
@@ -257,6 +289,11 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']));
   const [draggingImagePaths, setDraggingImagePaths] = useState<string[]>([]);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchEverywhere, setSearchEverywhere] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchActive = debouncedSearch.trim().length >= SEARCH_MIN_CHARS;
 
   useEffect(() => {
     setExpanded((current) => {
@@ -266,6 +303,18 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
       return next;
     });
   }, [path, treeVersion]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, searchEverywhere, path]);
 
   useEffect(() => {
     let active = true;
@@ -288,7 +337,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
 
   useEffect(() => {
     let active = true;
-    listImages(config, page, limit, path)
+    listImages(config, page, limit, path, debouncedSearch, searchEverywhere)
       .then((result) => {
         if (!active) {
           return;
@@ -306,17 +355,26 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     return () => {
       active = false;
     };
-  }, [config, page, limit, path, messages.loadFailed]);
+  }, [config, page, limit, path, debouncedSearch, searchEverywhere, messages.loadFailed]);
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
   const crumbs = breadcrumb(path, messages.home);
   const crumbPaths = ancestorPaths(path);
+  const scopeFolderName = folderDisplayName(path, messages.home);
+
+  function clearSearch(): void {
+    setSearchInput('');
+    setDebouncedSearch('');
+    setSearchEverywhere(false);
+    setPage(1);
+    searchInputRef.current?.focus();
+  }
 
   async function refreshImages(nextPage = 1): Promise<MediaImage[]> {
     setPage(nextPage);
-    const refreshed = await listImages(config, nextPage, limit, path);
+    const refreshed = await listImages(config, nextPage, limit, path, debouncedSearch, searchEverywhere);
     setImages(refreshed.images);
     setTotal(refreshed.total);
 
@@ -401,6 +459,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   function selectFolder(next: string): void {
     setPath(next);
     setPage(1);
+    setSearchEverywhere(false);
     setSelectedPaths(new Set());
     setSelectionAnchor(null);
   }
@@ -651,6 +710,56 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
             }}
           >
             <div className="lf-media-assets__scroll">
+              <div className="lf-media-assets__search">
+                <span className="lf-media-assets__search-icon" aria-hidden="true">⌕</span>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  className="lf-media-assets__search-input"
+                  autoComplete="off"
+                  value={searchInput}
+                  placeholder={messages.searchPlaceholder}
+                  aria-label={messages.searchPlaceholder}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ('Escape' === event.key) {
+                      event.preventDefault();
+                      clearSearch();
+                    }
+                  }}
+                />
+                {'' !== searchInput && (
+                  <button
+                    type="button"
+                    className="lf-media-assets__search-clear"
+                    aria-label={messages.searchClear}
+                    onClick={clearSearch}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {searchActive && (
+                <p className="lf-media-assets__search-scope">
+                  <span>
+                    {searchEverywhere
+                      ? messages.searchScopeEverywhere
+                      : fill(messages.searchScope, { folder: scopeFolderName })}
+                  </span>
+                  {!searchEverywhere && (
+                    <button
+                      type="button"
+                      className="lf-media-assets__search-everywhere"
+                      onClick={() => {
+                        setSearchEverywhere(true);
+                        setPage(1);
+                      }}
+                    >
+                      {messages.searchEverywhere}
+                    </button>
+                  )}
+                </p>
+              )}
               <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
                 {crumbs.map((crumb, index) => {
                   const crumbPath = crumbPaths[index] ?? '';
@@ -677,49 +786,89 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
               {error && (
                 <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
               )}
-              {images.length === 0 && !error && <p className="lf-media-assets__empty">{messages.empty}</p>}
-              <div className="lf-media-assets__grid">
-                {images.map((image, index) => (
-                  <button
-                    type="button"
-                    key={image.url}
-                    className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
-                    aria-selected={selectedPaths.has(image.path)}
-                    draggable
-                    onDragStart={(event) => {
-                      const paths = selectedPaths.has(image.path) ? Array.from(selectedPaths) : [image.path];
-                      if (!selectedPaths.has(image.path)) {
-                        setSelectedPaths(new Set([image.path]));
-                        setSelectionAnchor(image.path);
-                      }
-                      event.dataTransfer.setData('text/plain', JSON.stringify(paths));
-                      event.dataTransfer.effectAllowed = 'move';
-                      setDraggingImagePaths(paths);
-                      if (paths.length > 1) {
-                        const badge = document.createElement('div');
-                        badge.className = 'lf-media-assets__drag-count';
-                        badge.textContent = String(paths.length);
-                        document.body.appendChild(badge);
-                        event.dataTransfer.setDragImage(badge, 16, 16);
-                        requestAnimationFrame(() => badge.remove());
-                      }
-                    }}
-                    onDragEnd={() => {
-                      setDraggingImagePaths([]);
-                      setDropTargetFolder(null);
-                    }}
-                    onClick={(event) => selectImage(image, index, event)}
-                    onDoubleClick={() => session.select(image.url)}
-                  >
-                    <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
-                    <span className="lf-media-assets__meta">
-                      <span className="lf-media-assets__meta-name">{image.name}</span>
-                      <span className="lf-media-assets__meta-size">
-                        {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
-                      </span>
+              {images.length === 0 && !error && (
+                searchActive ? (
+                  <p className="lf-media-assets__empty">
+                    <span>
+                      {searchEverywhere
+                        ? fill(messages.searchEmptyEverywhere, { query: debouncedSearch.trim() })
+                        : fill(messages.searchEmpty, {
+                          query: debouncedSearch.trim(),
+                          folder: scopeFolderName,
+                        })}
                     </span>
-                  </button>
-                ))}
+                    {!searchEverywhere && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className="lf-media-assets__search-everywhere"
+                          onClick={() => {
+                            setSearchEverywhere(true);
+                            setPage(1);
+                          }}
+                        >
+                          {messages.searchEverywhere}
+                        </button>
+                      </>
+                    )}
+                  </p>
+                ) : (
+                  <p className="lf-media-assets__empty">{messages.empty}</p>
+                )
+              )}
+              <div className="lf-media-assets__grid">
+                {images.map((image, index) => {
+                  const folderPath = parentFolderPath(image.path);
+                  const folderLabel = truncateFolderPath(folderPath);
+
+                  return (
+                    <button
+                      type="button"
+                      key={image.url}
+                      className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                      aria-selected={selectedPaths.has(image.path)}
+                      draggable
+                      onDragStart={(event) => {
+                        const paths = selectedPaths.has(image.path) ? Array.from(selectedPaths) : [image.path];
+                        if (!selectedPaths.has(image.path)) {
+                          setSelectedPaths(new Set([image.path]));
+                          setSelectionAnchor(image.path);
+                        }
+                        event.dataTransfer.setData('text/plain', JSON.stringify(paths));
+                        event.dataTransfer.effectAllowed = 'move';
+                        setDraggingImagePaths(paths);
+                        if (paths.length > 1) {
+                          const badge = document.createElement('div');
+                          badge.className = 'lf-media-assets__drag-count';
+                          badge.textContent = String(paths.length);
+                          document.body.appendChild(badge);
+                          event.dataTransfer.setDragImage(badge, 16, 16);
+                          requestAnimationFrame(() => badge.remove());
+                        }
+                      }}
+                      onDragEnd={() => {
+                        setDraggingImagePaths([]);
+                        setDropTargetFolder(null);
+                      }}
+                      onClick={(event) => selectImage(image, index, event)}
+                      onDoubleClick={() => session.select(image.url)}
+                    >
+                      <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
+                      <span className="lf-media-assets__meta">
+                        <span className="lf-media-assets__meta-name">{image.name}</span>
+                        <span className="lf-media-assets__meta-size">
+                          {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
+                        </span>
+                        {searchActive && (
+                          <span className="lf-media-assets__meta-path" title={image.path}>
+                            {folderLabel}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {dragging && <div className="lf-media-assets__drop">{messages.drop}</div>}
