@@ -211,6 +211,33 @@
   margin: 8px 16px 0;
 }
 
+.lf-media-assets__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #0f62fe;
+  background: #edf5ff;
+}
+
+.lf-media-assets__notice-content {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: #161616;
+}
+
+.lf-media-assets__notice-content p {
+  margin: 0;
+}
+
+.lf-media-assets__notice-content .lf-media-assets__search-everywhere {
+  display: inline-block;
+  margin-top: 6px;
+}
+
 .lf-media-assets__main {
   display: flex;
   flex: 1;

@@ -145,6 +145,29 @@ function DismissibleAlert({
   );
 }
 
+function SearchEmptyNotice({
+  message,
+  everywhereLabel,
+  onSearchEverywhere,
+}: {
+  message: string;
+  everywhereLabel?: string;
+  onSearchEverywhere?: () => void;
+}): JSX.Element {
+  return (
+    <div className="lf-media-assets__notice" role="status">
+      <div className="lf-media-assets__notice-content">
+        <p>{message}</p>
+        {everywhereLabel && onSearchEverywhere ? (
+          <button type="button" className="lf-media-assets__search-everywhere" onClick={onSearchEverywhere}>
+            {everywhereLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function parseDraggedImagePaths(raw: string): string[] {
   if ('' === raw) {
     return [];
@@ -739,7 +762,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   </button>
                 )}
               </div>
-              {searchActive && (
+              {searchActive && images.length > 0 && (
                 <p className="lf-media-assets__search-scope">
                   <span>
                     {searchEverywhere
@@ -788,31 +811,25 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
               )}
               {images.length === 0 && !error && (
                 searchActive ? (
-                  <p className="lf-media-assets__empty">
-                    <span>
-                      {searchEverywhere
+                  <SearchEmptyNotice
+                    message={
+                      searchEverywhere
                         ? fill(messages.searchEmptyEverywhere, { query: debouncedSearch.trim() })
                         : fill(messages.searchEmpty, {
                           query: debouncedSearch.trim(),
                           folder: scopeFolderName,
-                        })}
-                    </span>
-                    {!searchEverywhere && (
-                      <>
-                        {' '}
-                        <button
-                          type="button"
-                          className="lf-media-assets__search-everywhere"
-                          onClick={() => {
-                            setSearchEverywhere(true);
-                            setPage(1);
-                          }}
-                        >
-                          {messages.searchEverywhere}
-                        </button>
-                      </>
-                    )}
-                  </p>
+                        })
+                    }
+                    everywhereLabel={searchEverywhere ? undefined : messages.searchEverywhere}
+                    onSearchEverywhere={
+                      searchEverywhere
+                        ? undefined
+                        : () => {
+                          setSearchEverywhere(true);
+                          setPage(1);
+                        }
+                    }
+                  />
                 ) : (
                   <p className="lf-media-assets__empty">{messages.empty}</p>
                 )
