@@ -519,12 +519,14 @@
   border: 0;
   background: transparent;
   color: #525252;
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 
 .lf-media-assets__search-action i {
-  font-size: 20px;
+  /* Match Mautic list search (contacts): ri-fw at button font size, slightly bumped. */
+  font-size: calc(1em + 2px);
   line-height: 1;
 }
 

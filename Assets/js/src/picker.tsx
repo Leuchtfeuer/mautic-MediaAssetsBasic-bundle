@@ -748,7 +748,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   }}
                 >
                   <i
-                    className={'' !== searchInput ? 'ri-eraser-line ri-lg' : 'ri-search-line ri-lg'}
+                    className={'' !== searchInput ? 'ri-eraser-line ri-fw' : 'ri-search-line ri-fw'}
                     aria-hidden="true"
                   />
                 </button>
