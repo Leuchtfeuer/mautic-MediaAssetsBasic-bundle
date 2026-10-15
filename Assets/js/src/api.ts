@@ -1,4 +1,4 @@
-import type { FolderNode, MediaImage, PickerConfig } from './types';
+import type { FolderNode, MediaImage, PickerConfig, UploadConflict, UploadDecision } from './types';
 
 interface ListResponse {
   images: MediaImage[];
@@ -7,7 +7,24 @@ interface ListResponse {
 }
 
 interface UploadResponse {
-  files?: Array<{ ok: boolean; name?: string; error?: string; image?: MediaImage }>;
+  files?: Array<{
+    ok: boolean;
+    name?: string;
+    error?: string;
+    image?: MediaImage;
+    conflict?: UploadConflict;
+    usedExisting?: boolean;
+  }>;
+  error?: string;
+}
+
+interface CheckResponse {
+  files?: Array<{
+    ok: boolean;
+    name?: string;
+    error?: string;
+    conflict?: UploadConflict | null;
+  }>;
   error?: string;
 }
 
@@ -82,16 +99,53 @@ export async function createFolder(config: PickerConfig, parent: string, name: s
   return payload.folder;
 }
 
+export function checkUploadFile(
+  config: PickerConfig,
+  file: File,
+  path: string,
+): Promise<{ ok: boolean; error?: string; conflict?: UploadConflict | null }> {
+  return new Promise((resolve) => {
+    const body = new FormData();
+    body.append('files[]', file);
+    body.append('path', path);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', config.uploadCheckUrl);
+    xhr.setRequestHeader('X-CSRF-Token', csrfToken());
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.onload = () => {
+      let payload: CheckResponse = {};
+      try {
+        payload = JSON.parse(xhr.responseText) as CheckResponse;
+      } catch {
+        resolve({ ok: false, error: config.messages?.uploadFailed ?? 'The file could not be uploaded.' });
+        return;
+      }
+      const result = payload.files?.[0];
+      if (!result || !result.ok) {
+        resolve({ ok: false, error: result?.error || payload.error || config.messages?.uploadFailed || 'The file could not be uploaded.' });
+        return;
+      }
+      resolve({ ok: true, conflict: result.conflict ?? null });
+    };
+    xhr.onerror = () => resolve({ ok: false, error: config.messages?.uploadFailed ?? 'The file could not be uploaded.' });
+    xhr.send(body);
+  });
+}
+
 export function uploadFile(
   config: PickerConfig,
   file: File,
   path: string,
   onProgress: (progress: number) => void,
-): Promise<{ ok: boolean; error?: string; image?: MediaImage }> {
+  decision?: UploadDecision,
+): Promise<{ ok: boolean; error?: string; image?: MediaImage; conflict?: UploadConflict; usedExisting?: boolean }> {
   return new Promise((resolve) => {
     const body = new FormData();
     body.append('files[]', file);
     body.append('path', path);
+    if (decision) {
+      body.append('decision', decision);
+    }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', config.uploadUrl);
     xhr.setRequestHeader('X-CSRF-Token', csrfToken());
@@ -111,11 +165,15 @@ export function uploadFile(
         return;
       }
       const result = payload.files?.[0];
+      if (result?.conflict) {
+        resolve({ ok: false, conflict: result.conflict });
+        return;
+      }
       if (!result || !result.ok || !result.image) {
         resolve({ ok: false, error: result?.error || payload.error || config.messages?.uploadFailed || 'The file could not be uploaded.' });
         return;
       }
-      resolve({ ok: true, image: result.image });
+      resolve({ ok: true, image: result.image, usedExisting: result.usedExisting });
     };
     xhr.onerror = () => resolve({ ok: false, error: config.messages?.uploadFailed ?? 'The file could not be uploaded.' });
     xhr.send(body);
@@ -136,16 +194,29 @@ export async function moveImage(config: PickerConfig, imagePath: string, folder:
   return payload.image;
 }
 
-export async function importUrl(config: PickerConfig, url: string, path: string): Promise<MediaImage> {
+export async function importUrl(
+  config: PickerConfig,
+  url: string,
+  path: string,
+  decision?: UploadDecision,
+): Promise<{ image?: MediaImage; conflict?: UploadConflict; name?: string }> {
   const response = await fetch(config.importUrl, {
     method: 'POST',
     headers: headers(true),
-    body: JSON.stringify({ url, path }),
+    body: JSON.stringify({ url, path, decision }),
   });
-  const payload = await response.json() as { image?: MediaImage; error?: string };
+  const payload = await response.json() as {
+    image?: MediaImage;
+    error?: string;
+    conflict?: UploadConflict;
+    name?: string;
+  };
+  if (response.status === 409 && payload.conflict) {
+    return { conflict: payload.conflict, name: payload.name };
+  }
   if (!response.ok || !payload.image) {
     throw new Error(payload.error || config.messages?.importFailed || 'The image could not be imported.');
   }
 
-  return payload.image;
+  return { image: payload.image };
 }

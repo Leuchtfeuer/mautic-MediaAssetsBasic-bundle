@@ -55,6 +55,7 @@ final class IndexMediaCommand extends Command
             ['Metric', 'Count'],
             [
                 ['Files indexed (new)', (string) $summary->filesIndexed],
+                ['  of which duplicate checksum', (string) $summary->filesIndexedDuplicateChecksum],
                 ['Files updated', (string) $summary->filesUpdated],
                 ['Files soft-deleted (missing on disk)', (string) $summary->filesSoftDeleted],
                 ['Files restored', (string) $summary->filesRestored],

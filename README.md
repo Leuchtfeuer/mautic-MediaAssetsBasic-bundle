@@ -128,9 +128,9 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 
 **Folder:** `id`, `parent_id`, `relative_path` (unique), `name`, timestamps.
 
-**File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `missing_since` (nullable), timestamps.
+**File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `checksum` (SHA-256, nullable until indexed), `date_added` (nullable until indexed), `missing_since` (nullable).
 
-**Later (out of scope for the first index story):** UUID, checksum, usage references, path aliases, renditions root outside the browsable tree.
+**Later:** UUID, usage references, path aliases, renditions root outside the browsable tree, versioning.
 
 ### Picker / API
 
@@ -148,12 +148,18 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 6. Picker list/tree: **database only**; functional tests use a **mocked repository** (no Finder/scandir).
 7. Soft-deleted files **do not** appear in the picker.
 
-### Out of scope (first index story)
+### Checksum / duplicate handling
+
+- SHA-256 stored on every indexed/uploaded file; `NULL` checksums are backfilled on the next index run (`leuchtfeuer:media:index-media`, optionally `--all`).
+- Upload/import **preflight** (`POST …/images/upload/check`, or import without `decision`) reports `checksum_duplicate` (library-wide, oldest by `date_added` then `id`) or `name_clash` (same folder). Checksum wins when both apply. Soft-deleted rows are ignored.
+- Decisions: `use_existing` | `keep_both` | `replace` (name clash overwrite in place; `date_added` kept). Keep both may still apply `uniqueName` (`-2`) if the target name is taken.
+- Console index allows duplicate checksums; report includes `of which duplicate checksum` for newly indexed rows whose hash already existed.
+
+### Out of scope
 
 - Event-based indexing, on-demand re-scan from the UI.
-- Checksum, deduplication, upload duplicate resolution.
-- Renditions, versions, usage, path aliases.
-- UI changes beyond the data source (same folder/file listing as today).
+- Versioning / UUID / “uploaded by” metadata.
+- Renditions, usage, path aliases.
 
 ### Performance
 

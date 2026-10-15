@@ -34,14 +34,27 @@ final readonly class UrlImageImporter
 
     public function import(string $directory, string $url, string $relativeDirectory = '', bool $allowSvg = false): ListedImage
     {
+        $downloaded = $this->downloadBody($url);
+        $name       = $this->nameFromDownloadedUrl($downloaded['url']);
+
+        return $this->storage->store($directory, $name, $downloaded['body'], $relativeDirectory, $allowSvg);
+    }
+
+    /**
+     * @return array{url: string, body: string}
+     */
+    public function downloadBody(string $url): array
+    {
         $url      = trim($url);
         $maxBytes = min(self::MAX_DOWNLOAD_BYTES, IniSize::toBytes(IniSize::uploadMaxFilesize()));
         $this->guard->safeAddresses($url);
 
-        $downloaded = $this->download($url, $maxBytes);
-        $name       = $this->nameFromUrl($downloaded['url']);
+        return $this->download($url, $maxBytes);
+    }
 
-        return $this->storage->store($directory, $name, $downloaded['body'], $relativeDirectory, $allowSvg);
+    public function nameFromDownloadedUrl(string $url): string
+    {
+        return $this->nameFromUrl($url);
     }
 
     /**

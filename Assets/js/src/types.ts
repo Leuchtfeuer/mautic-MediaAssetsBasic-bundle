@@ -14,6 +14,21 @@ export interface FolderNode {
   children: FolderNode[];
 }
 
+export type ConflictType = 'checksum_duplicate' | 'name_clash';
+export type UploadDecision = 'use_existing' | 'keep_both' | 'replace';
+
+export interface UploadConflict {
+  type: ConflictType;
+  intendedName: string;
+  intendedPath: string;
+  existing: {
+    name: string;
+    path: string;
+    url: string;
+    dateAdded: string | null;
+  };
+}
+
 export interface PickerMessages {
   images: string;
   importFromUrl: string;
@@ -49,11 +64,24 @@ export interface PickerMessages {
   searchEverywhere: string;
   searchEmpty: string;
   searchEmptyEverywhere: string;
+  conflictAttention: string;
+  conflictChecksum: string;
+  conflictName: string;
+  conflictUseExisting: string;
+  conflictKeepBoth: string;
+  conflictReplace: string;
+  conflictCancel: string;
+  conflictUseExistingAll: string;
+  conflictReplaceAllNames: string;
+  conflictKeepBothAll: string;
+  conflictCancelAll: string;
+  conflictCloseConfirm: string;
 }
 
 export interface PickerConfig {
   listUrl: string;
   uploadUrl: string;
+  uploadCheckUrl: string;
   importUrl: string;
   foldersUrl: string;
   createFolderUrl: string;
@@ -67,6 +95,10 @@ export interface FileProgress {
   name: string;
   progress: number;
   error?: string;
+  file?: File;
+  importSource?: string;
+  conflict?: UploadConflict;
+  usedExisting?: boolean;
 }
 
 export interface AssetSession {

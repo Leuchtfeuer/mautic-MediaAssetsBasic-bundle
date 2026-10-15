@@ -676,10 +676,107 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 
         $stem   = 'lfmedia'.bin2hex(random_bytes(4));
         $first  = $this->uploadPng($stem.'.png');
-        $second = $this->uploadPng($stem.'.png');
+        $second = $this->uploadPng($stem.'.png', '', 'keep_both');
 
         $this->assertSame($stem.'.png', $first);
         $this->assertSame($stem.'-1.png', $second);
+    }
+
+    public function testChecksumDuplicateCheckAndUseExisting(): void
+    {
+        $this->publishPlugin();
+
+        $seed = 'same-'.bin2hex(random_bytes(3));
+        $this->uploadPng('original.png', '', null, $seed);
+
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, $this->png($seed));
+        $file = new UploadedFile($path, 'copy.png', 'image/png', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload/check',
+            ['path' => ''],
+            ['files' => [$file]],
+            $this->ajaxHeaders(),
+        );
+        $check = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($check);
+        $files = $check['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertTrue($first['ok'] ?? null);
+        $conflict = $first['conflict'] ?? null;
+        $this->assertIsArray($conflict);
+        $this->assertSame('checksum_duplicate', $conflict['type'] ?? null);
+        $existing = $conflict['existing'] ?? null;
+        $this->assertIsArray($existing);
+        $this->assertSame('original.png', $existing['path'] ?? null);
+
+        $path2 = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path2);
+        file_put_contents($path2, $this->png($seed));
+        $file2 = new UploadedFile($path2, 'copy.png', 'image/png', null, true);
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            ['path' => '', 'decision' => 'use_existing'],
+            ['files' => [$file2]],
+            $this->ajaxHeaders(),
+        );
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $uploadFiles = $upload['files'] ?? null;
+        $this->assertIsArray($uploadFiles);
+        $row = $uploadFiles[0] ?? null;
+        $this->assertIsArray($row);
+        $this->assertTrue($row['ok'] ?? null);
+        $this->assertTrue($row['usedExisting'] ?? null);
+        $image = $row['image'] ?? null;
+        $this->assertIsArray($image);
+        $this->assertSame('original.png', $image['path'] ?? null);
+    }
+
+    public function testNameClashReplaceOverwritesInPlace(): void
+    {
+        $this->publishPlugin();
+
+        $name = 'replace-'.bin2hex(random_bytes(3)).'.png';
+        $this->uploadPng($name, '', null, 'old-content');
+
+        $path = tempnam(sys_get_temp_dir(), 'lf-media');
+        $this->assertIsString($path);
+        file_put_contents($path, $this->png('new-content'));
+        $file = new UploadedFile($path, $name, 'image/png', null, true);
+
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            ['path' => '', 'decision' => 'replace'],
+            ['files' => [$file]],
+            $this->ajaxHeaders(),
+        );
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertTrue($first['ok'] ?? null, (string) json_encode($first));
+        $image = $first['image'] ?? null;
+        $this->assertIsArray($image);
+        $this->assertSame($name, $image['path'] ?? null);
+
+        $paths = self::getContainer()->get(PathsHelper::class);
+        $this->assertInstanceOf(PathsHelper::class, $paths);
+        $absolute = rtrim($paths->getImagePath(), '/').'/'.$name;
+        $this->assertFileExists($absolute);
+        $this->assertSame(hash('sha256', $this->png('new-content')), hash_file('sha256', $absolute));
     }
 
     public function testImportRequiresAUrl(): void
@@ -756,17 +853,22 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         return $name;
     }
 
-    private function uploadPng(string $filename, string $folder = ''): string
+    private function uploadPng(string $filename, string $folder = '', ?string $decision = null, ?string $pngSeed = null): string
     {
         $path = tempnam(sys_get_temp_dir(), 'lf-media');
         $this->assertIsString($path);
-        file_put_contents($path, $this->png());
+        file_put_contents($path, $this->png($pngSeed ?? $filename.'|'.$folder.'|'.bin2hex(random_bytes(2))));
         $file = new UploadedFile($path, $filename, 'image/png', null, true);
+
+        $params = ['path' => $folder];
+        if (null !== $decision) {
+            $params['decision'] = $decision;
+        }
 
         $this->client->request(
             Request::METHOD_POST,
             '/s/media-assets-basic/images/upload',
-            ['path' => $folder],
+            $params,
             ['files' => [$file]],
             $this->ajaxHeaders(),
         );
@@ -844,12 +946,29 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $this->em->flush();
     }
 
-    private function png(): string
+    private function png(?string $seed = null): string
     {
+        $seed ??= bin2hex(random_bytes(4));
+        if (function_exists('imagecreatetruecolor')) {
+            $image = imagecreatetruecolor(1, 1);
+            $this->assertNotFalse($image);
+            $hash  = crc32($seed);
+            $color = imagecolorallocate($image, ($hash >> 16) & 0xFF, ($hash >> 8) & 0xFF, $hash & 0xFF);
+            $this->assertNotFalse($color);
+            imagesetpixel($image, 0, 0, $color);
+            ob_start();
+            imagepng($image);
+            imagedestroy($image);
+            $png = ob_get_clean();
+            $this->assertIsString($png);
+
+            return $png;
+        }
+
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', true);
         $this->assertIsString($png);
 
-        return $png;
+        return $png.$seed;
     }
 
     private function svg(): string

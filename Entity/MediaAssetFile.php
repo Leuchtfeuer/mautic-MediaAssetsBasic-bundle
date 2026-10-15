@@ -29,6 +29,10 @@ class MediaAssetFile
 
     private int $fileMtime = 0;
 
+    private ?string $checksum = null;
+
+    private ?\DateTimeImmutable $dateAdded = null;
+
     private ?\DateTimeImmutable $missingSince = null;
 
     /**
@@ -41,7 +45,8 @@ class MediaAssetFile
         $builder->setTable('lf_media_asset_files')
             ->setCustomRepositoryClass(MediaAssetFileRepository::class)
             ->addUniqueConstraint(['relative_path'], 'lf_mab_file_path')
-            ->addIndex(['file_mtime'], 'lf_mab_file_mtime');
+            ->addIndex(['file_mtime'], 'lf_mab_file_mtime')
+            ->addIndex(['checksum'], 'lf_mab_file_checksum');
 
         $builder->addId();
 
@@ -56,6 +61,8 @@ class MediaAssetFile
         $builder->addNamedField('height', Types::INTEGER, 'height');
         $builder->addNamedField('bytes', Types::INTEGER, 'bytes');
         $builder->addNamedField('fileMtime', Types::INTEGER, 'file_mtime');
+        $builder->addNamedField('checksum', Types::STRING, 'checksum', true);
+        $builder->addNamedField('dateAdded', Types::DATETIME_IMMUTABLE, 'date_added', true);
         $builder->addNamedField('missingSince', Types::DATETIME_IMMUTABLE, 'missing_since', true);
     }
 
@@ -161,6 +168,30 @@ class MediaAssetFile
     public function setFileMtime(int $fileMtime): self
     {
         $this->fileMtime = $fileMtime;
+
+        return $this;
+    }
+
+    public function getChecksum(): ?string
+    {
+        return $this->checksum;
+    }
+
+    public function setChecksum(?string $checksum): self
+    {
+        $this->checksum = $checksum;
+
+        return $this;
+    }
+
+    public function getDateAdded(): ?\DateTimeImmutable
+    {
+        return $this->dateAdded;
+    }
+
+    public function setDateAdded(?\DateTimeImmutable $dateAdded): self
+    {
+        $this->dateAdded = $dateAdded;
 
         return $this;
     }

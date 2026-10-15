@@ -32,6 +32,67 @@ class MediaAssetFileRepository extends CommonRepository
         return $this->findOneBy(['relativePath' => $relativePath]);
     }
 
+    public function findOldestActiveByChecksum(string $checksum): ?MediaAssetFile
+    {
+        if ('' === $checksum) {
+            return null;
+        }
+
+        /** @var list<MediaAssetFile> $matches */
+        $matches = $this->createQueryBuilder('f')
+            ->where('f.checksum = :checksum')
+            ->andWhere('f.missingSince IS NULL')
+            ->setParameter('checksum', $checksum)
+            ->getQuery()
+            ->getResult();
+
+        if ([] === $matches) {
+            return null;
+        }
+
+        usort(
+            $matches,
+            static function (MediaAssetFile $left, MediaAssetFile $right): int {
+                $leftAdded  = $left->getDateAdded();
+                $rightAdded = $right->getDateAdded();
+                if ($leftAdded instanceof \DateTimeImmutable && $rightAdded instanceof \DateTimeImmutable) {
+                    $cmp = $leftAdded <=> $rightAdded;
+                    if (0 !== $cmp) {
+                        return $cmp;
+                    }
+                } elseif ($leftAdded instanceof \DateTimeImmutable) {
+                    return -1;
+                } elseif ($rightAdded instanceof \DateTimeImmutable) {
+                    return 1;
+                }
+
+                return ($left->getId() ?? 0) <=> ($right->getId() ?? 0);
+            }
+        );
+
+        return $matches[0];
+    }
+
+    public function hasOtherActiveWithChecksum(string $checksum, ?string $excludeRelativePath = null): bool
+    {
+        if ('' === $checksum) {
+            return false;
+        }
+
+        $qb = $this->createQueryBuilder('f')
+            ->select('COUNT(f.id)')
+            ->where('f.checksum = :checksum')
+            ->andWhere('f.missingSince IS NULL')
+            ->setParameter('checksum', $checksum);
+
+        if (null !== $excludeRelativePath && '' !== $excludeRelativePath) {
+            $qb->andWhere('f.relativePath != :exclude')
+                ->setParameter('exclude', $excludeRelativePath);
+        }
+
+        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
+    }
+
     /**
      * @return array{images: list<MediaAssetFile>, total: int}
      */

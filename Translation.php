@@ -116,6 +116,32 @@ final class Translation
 
     public const SEARCH_EMPTY_EVERYWHERE = 'mautic.plugin.leuchtfeuermediaassetsbasic.search_empty_everywhere';
 
+    public const ERROR_UPLOAD_DECISION = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.upload_decision';
+
+    public const CONFLICT_ATTENTION = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.attention';
+
+    public const CONFLICT_CHECKSUM = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.checksum';
+
+    public const CONFLICT_NAME = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.name';
+
+    public const CONFLICT_USE_EXISTING = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.use_existing';
+
+    public const CONFLICT_KEEP_BOTH = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.keep_both';
+
+    public const CONFLICT_REPLACE = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.replace';
+
+    public const CONFLICT_CANCEL = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.cancel';
+
+    public const CONFLICT_USE_EXISTING_ALL = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.use_existing_all';
+
+    public const CONFLICT_REPLACE_ALL_NAMES = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.replace_all_names';
+
+    public const CONFLICT_KEEP_BOTH_ALL = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.keep_both_all';
+
+    public const CONFLICT_CANCEL_ALL = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.cancel_all';
+
+    public const CONFLICT_CLOSE_CONFIRM = 'mautic.plugin.leuchtfeuermediaassetsbasic.conflict.close_confirm';
+
     /**
      * @return array<string, string>
      */
@@ -156,6 +182,18 @@ final class Translation
             'searchEverywhere'        => self::SEARCH_EVERYWHERE,
             'searchEmpty'             => self::SEARCH_EMPTY,
             'searchEmptyEverywhere'   => self::SEARCH_EMPTY_EVERYWHERE,
+            'conflictAttention'       => self::CONFLICT_ATTENTION,
+            'conflictChecksum'        => self::CONFLICT_CHECKSUM,
+            'conflictName'            => self::CONFLICT_NAME,
+            'conflictUseExisting'     => self::CONFLICT_USE_EXISTING,
+            'conflictKeepBoth'        => self::CONFLICT_KEEP_BOTH,
+            'conflictReplace'         => self::CONFLICT_REPLACE,
+            'conflictCancel'          => self::CONFLICT_CANCEL,
+            'conflictUseExistingAll'  => self::CONFLICT_USE_EXISTING_ALL,
+            'conflictReplaceAllNames' => self::CONFLICT_REPLACE_ALL_NAMES,
+            'conflictKeepBothAll'     => self::CONFLICT_KEEP_BOTH_ALL,
+            'conflictCancelAll'       => self::CONFLICT_CANCEL_ALL,
+            'conflictCloseConfirm'    => self::CONFLICT_CLOSE_CONFIRM,
         ];
     }
 }

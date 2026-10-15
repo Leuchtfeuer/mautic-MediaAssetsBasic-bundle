@@ -8,6 +8,7 @@ final readonly class MediaIndexRunSummary
 {
     public function __construct(
         public int $filesIndexed = 0,
+        public int $filesIndexedDuplicateChecksum = 0,
         public int $filesUpdated = 0,
         public int $filesSoftDeleted = 0,
         public int $filesRestored = 0,
@@ -22,6 +23,22 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed + $count,
+            $this->filesIndexedDuplicateChecksum,
+            $this->filesUpdated,
+            $this->filesSoftDeleted,
+            $this->filesRestored,
+            $this->foldersIndexed,
+            $this->foldersSoftDeleted,
+            $this->foldersRestored,
+            $this->skipped,
+        );
+    }
+
+    public function withFilesIndexedDuplicateChecksum(int $count = 1): self
+    {
+        return new self(
+            $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum + $count,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored,
@@ -36,6 +53,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated + $count,
             $this->filesSoftDeleted,
             $this->filesRestored,
@@ -50,6 +68,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted + $count,
             $this->filesRestored,
@@ -64,6 +83,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored + $count,
@@ -78,6 +98,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored,
@@ -92,6 +113,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored,
@@ -106,6 +128,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored,
@@ -120,6 +143,7 @@ final readonly class MediaIndexRunSummary
     {
         return new self(
             $this->filesIndexed,
+            $this->filesIndexedDuplicateChecksum,
             $this->filesUpdated,
             $this->filesSoftDeleted,
             $this->filesRestored,

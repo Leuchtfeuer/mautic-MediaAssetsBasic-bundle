@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { createFolder, importUrl, listFolders, listImages, moveImage, uploadFile } from './api';
-import type { AssetSession, FileProgress, FolderNode, MediaImage, PickerConfig, PickerMessages } from './types';
+import { checkUploadFile, createFolder, importUrl, listFolders, listImages, moveImage, uploadFile } from './api';
+import type {
+  AssetSession,
+  FileProgress,
+  FolderNode,
+  MediaImage,
+  PickerConfig,
+  PickerMessages,
+  UploadConflict,
+  UploadDecision,
+} from './types';
 import './picker.css';
 
 const fallbackMessages: PickerMessages = {
@@ -38,7 +47,40 @@ const fallbackMessages: PickerMessages = {
   searchEverywhere: 'Search everywhere',
   searchEmpty: 'No files matching %query% in "%folder%" and subfolders',
   searchEmptyEverywhere: 'No files matching %query%',
+  conflictAttention: 'Uploaded %total% files · %count% need attention',
+  conflictChecksum: 'Already in your library — %path%%date%',
+  conflictName: 'Name clash: A different file with this name already exists here%date%',
+  conflictUseExisting: 'Use existing file',
+  conflictKeepBoth: 'Keep both',
+  conflictReplace: 'Replace file',
+  conflictCancel: 'Cancel',
+  conflictUseExistingAll: 'Use existing for all duplicates',
+  conflictReplaceAllNames: 'Replace for all name clashes',
+  conflictKeepBothAll: 'Keep both for all',
+  conflictCancelAll: 'Cancel all',
+  conflictCloseConfirm: '%count% files not uploaded — close anyway?',
 };
+
+function formatConflictDate(dateAdded: string | null): string {
+  if (!dateAdded) {
+    return '';
+  }
+  const parsed = new Date(`${dateAdded}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return `, uploaded ${dateAdded}`;
+  }
+
+  return `, uploaded ${parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+}
+
+function conflictMessage(messages: PickerMessages, conflict: UploadConflict): string {
+  const date = formatConflictDate(conflict.existing.dateAdded);
+  if ('checksum_duplicate' === conflict.type) {
+    return fill(messages.conflictChecksum, { path: conflict.existing.path, date });
+  }
+
+  return fill(messages.conflictName, { date });
+}
 
 const SEARCH_MIN_CHARS = 2;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -304,6 +346,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
   const folderInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<FileProgress[]>([]);
+  const [uploadBatchTotal, setUploadBatchTotal] = useState(0);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -404,22 +447,71 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     return refreshed.images;
   }
 
+  async function applyUploadedImage(image: MediaImage, usedExisting: boolean, batch: boolean): Promise<void> {
+    if (usedExisting && !batch) {
+      const folder = parentFolderPath(image.path);
+      setPath(folder);
+      const refreshed = await listImages(config, 1, limit, folder, '', false);
+      setImages(refreshed.images);
+      setTotal(refreshed.total);
+      setPage(1);
+      setTreeVersion((value) => value + 1);
+      setSelectedPaths(new Set([image.path]));
+      setSelectionAnchor(image.path);
+      session.select(image.url);
+
+      return;
+    }
+
+    await refreshImages(1);
+    setTreeVersion((value) => value + 1);
+    setSelectedPaths(new Set([image.path]));
+    setSelectionAnchor(image.path);
+  }
+
   async function sendFiles(files: File[]): Promise<void> {
-    const rows = files.map((file) => ({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, progress: 0 }));
+    const batch = files.length > 1;
+    const rows: FileProgress[] = files.map((file) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}`,
+      name: file.name,
+      progress: 0,
+      file,
+    }));
     setProgress(rows);
+    setUploadBatchTotal(files.length);
     const stored: MediaImage[] = [];
     for (const file of files) {
       const id = `${file.name}-${file.size}-${file.lastModified}`;
+      const checked = await checkUploadFile(config, file, path);
+      if (!checked.ok) {
+        setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: checked.error } : row)));
+        continue;
+      }
+      if (checked.conflict) {
+        setProgress((current) => current.map((row) => (
+          row.id === id ? { ...row, progress: 1, conflict: checked.conflict ?? undefined, file } : row
+        )));
+        continue;
+      }
       const result = await uploadFile(config, file, path, (value) => {
         setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: value } : row)));
       });
+      if (result.conflict) {
+        setProgress((current) => current.map((row) => (
+          row.id === id ? { ...row, progress: 1, conflict: result.conflict, file } : row
+        )));
+        continue;
+      }
       setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: result.error } : row)));
       if (result.image) {
         stored.push(result.image);
+        if (!batch) {
+          await applyUploadedImage(result.image, Boolean(result.usedExisting), false);
+        }
       }
     }
-    setProgress((current) => current.filter((row) => row.error));
-    if (stored.length > 0) {
+    setProgress((current) => current.filter((row) => row.error || row.conflict));
+    if (batch && stored.length > 0) {
       await refreshImages(1);
       setTreeVersion((value) => value + 1);
       setSelectedPaths(new Set(stored.map((image) => image.path)));
@@ -427,21 +519,127 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     }
   }
 
+  async function resolveConflict(id: string, decision: UploadDecision): Promise<void> {
+    const row = progress.find((item) => item.id === id);
+    if (!row?.file || !row.conflict) {
+      return;
+    }
+    const batch = progress.filter((item) => item.conflict).length > 1;
+    setProgress((current) => current.map((item) => (
+      item.id === id ? { ...item, progress: 0.2, conflict: undefined } : item
+    )));
+    const result = await uploadFile(config, row.file, path, (value) => {
+      setProgress((current) => current.map((item) => (item.id === id ? { ...item, progress: value } : item)));
+    }, decision);
+    if (result.conflict) {
+      setProgress((current) => current.map((item) => (
+        item.id === id ? { ...item, progress: 1, conflict: result.conflict, file: row.file } : item
+      )));
+      return;
+    }
+    if (!result.ok || !result.image) {
+      setProgress((current) => current.map((item) => (
+        item.id === id ? { ...item, progress: 1, error: result.error } : item
+      )));
+      return;
+    }
+    setProgress((current) => current.filter((item) => item.id !== id));
+    await applyUploadedImage(result.image, Boolean(result.usedExisting), batch);
+  }
+
+  function cancelConflict(id: string): void {
+    setProgress((current) => current.filter((row) => row.id !== id));
+  }
+
+  async function resolveConflictsOfType(type: 'checksum_duplicate' | 'name_clash', decision: UploadDecision): Promise<void> {
+    const ids = progress.filter((row) => row.conflict?.type === type).map((row) => row.id);
+    for (const id of ids) {
+      await resolveConflict(id, decision);
+    }
+  }
+
+  async function resolveAllKeepBoth(): Promise<void> {
+    const ids = progress.filter((row) => row.conflict).map((row) => row.id);
+    for (const id of ids) {
+      await resolveConflict(id, 'keep_both');
+    }
+  }
+
+  function cancelAllConflicts(): void {
+    setProgress((current) => current.filter((row) => !row.conflict));
+  }
+
+  function requestClose(): void {
+    const pending = progress.filter((row) => row.conflict).length;
+    if (pending > 0) {
+      const confirmed = window.confirm(fill(messages.conflictCloseConfirm, { count: pending }));
+      if (!confirmed) {
+        return;
+      }
+    }
+    session.close();
+  }
+
   async function fetchUrl(): Promise<void> {
     const id = `url-${url}`;
     setProgress((current) => [...current, { id, name: url, progress: 0.4 }]);
     try {
-      const image = await importUrl(config, url, path);
+      const result = await importUrl(config, url, path);
+      if (result.conflict) {
+        const source = url;
+        setProgress((current) => current.map((row) => (
+          row.id === id
+            ? {
+              ...row,
+              name: result.name || source,
+              progress: 1,
+              conflict: result.conflict,
+              importSource: source,
+            }
+            : row
+        )));
+        return;
+      }
+      if (!result.image) {
+        throw new Error(messages.importFailed);
+      }
       setProgress((current) => current.filter((row) => row.id !== id));
-      await refreshImages(1);
-      setTreeVersion((value) => value + 1);
-      setSelectedPaths(new Set([image.path]));
-      setSelectionAnchor(image.path);
+      await applyUploadedImage(result.image, false, false);
       setUrl('');
       setUrlOpen(false);
     } catch (reason: unknown) {
       const message = reason instanceof Error ? reason.message : messages.importFailed;
       setProgress((current) => current.map((row) => (row.id === id ? { ...row, error: message } : row)));
+    }
+  }
+
+  async function resolveImportConflict(id: string, decision: UploadDecision): Promise<void> {
+    const row = progress.find((item) => item.id === id);
+    if (!row?.conflict || !row.importSource) {
+      return;
+    }
+    const source = row.importSource;
+    setProgress((current) => current.map((item) => (
+      item.id === id ? { ...item, progress: 0.4, conflict: undefined } : item
+    )));
+    try {
+      const result = await importUrl(config, source, path, decision);
+      if (result.conflict) {
+        setProgress((current) => current.map((item) => (
+          item.id === id ? { ...item, progress: 1, conflict: result.conflict } : item
+        )));
+        return;
+      }
+      if (!result.image) {
+        throw new Error(messages.importFailed);
+      }
+      setProgress((current) => current.filter((item) => item.id !== id));
+      await applyUploadedImage(result.image, 'use_existing' === decision, false);
+      setUrl('');
+      setUrlOpen(false);
+    } catch (reason: unknown) {
+      const message = reason instanceof Error ? reason.message : messages.importFailed;
+      setProgress((current) => current.map((item) => (item.id === id ? { ...item, progress: 1, error: message } : item)));
     }
   }
 
@@ -600,7 +798,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
           <div className="lf-media-assets__actions">
             <button type="button" className="lf-media-assets__fetch" onClick={onFetch}>{messages.importFromUrl}</button>
             <button type="button" onClick={() => document.getElementById('lf-media-assets-file')?.click()}>{messages.upload}</button>
-            <button type="button" className="lf-media-assets__close" aria-label={messages.close} onClick={session.close}>×</button>
+            <button type="button" className="lf-media-assets__close" aria-label={messages.close} onClick={requestClose}>×</button>
           </div>
           <input
             id="lf-media-assets-file"
@@ -633,22 +831,86 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
         )}
         {progress.length > 0 && (
           <div className="lf-media-assets__progress">
-            {progress.map((row) => (
-              row.error ? (
-                <DismissibleAlert
-                  key={row.id}
-                  title={row.name}
-                  message={row.error}
-                  closeLabel={messages.close}
-                  onDismiss={() => dismissProgress(row.id)}
-                />
-              ) : (
-                <div className="lf-media-assets__progress-row" key={row.id}>
-                  <strong>{row.name}</strong>
-                  <div className="lf-media-assets__bar"><span style={{ width: `${Math.round(row.progress * 100)}%` }} /></div>
-                </div>
-              )
-            ))}
+            {(() => {
+              const conflicts = progress.filter((row) => row.conflict);
+              const hasChecksum = conflicts.some((row) => 'checksum_duplicate' === row.conflict?.type);
+              const hasName = conflicts.some((row) => 'name_clash' === row.conflict?.type);
+              return (
+                <>
+                  {conflicts.length > 0 && (
+                    <div className="lf-media-assets__conflict-head">
+                      {fill(messages.conflictAttention, {
+                        total: uploadBatchTotal || conflicts.length,
+                        count: conflicts.length,
+                      })}
+                    </div>
+                  )}
+                  {progress.map((row) => (
+                    row.error ? (
+                      <DismissibleAlert
+                        key={row.id}
+                        title={row.name}
+                        message={row.error}
+                        closeLabel={messages.close}
+                        onDismiss={() => dismissProgress(row.id)}
+                      />
+                    ) : row.conflict ? (
+                      <div className="lf-media-assets__conflict-row" key={row.id}>
+                        <div className="lf-media-assets__conflict-copy">
+                          <strong>{row.name}</strong>
+                          <span>{conflictMessage(messages, row.conflict)}</span>
+                        </div>
+                        <div className="lf-media-assets__conflict-actions">
+                          {'checksum_duplicate' === row.conflict.type ? (
+                            <button
+                              type="button"
+                              onClick={() => void (row.file ? resolveConflict(row.id, 'use_existing') : resolveImportConflict(row.id, 'use_existing'))}
+                            >
+                              {messages.conflictUseExisting}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void (row.file ? resolveConflict(row.id, 'replace') : resolveImportConflict(row.id, 'replace'))}
+                            >
+                              {messages.conflictReplace}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void (row.file ? resolveConflict(row.id, 'keep_both') : resolveImportConflict(row.id, 'keep_both'))}
+                          >
+                            {messages.conflictKeepBoth}
+                          </button>
+                          <button type="button" onClick={() => cancelConflict(row.id)}>{messages.conflictCancel}</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="lf-media-assets__progress-row" key={row.id}>
+                        <strong>{row.name}</strong>
+                        <div className="lf-media-assets__bar"><span style={{ width: `${Math.round(row.progress * 100)}%` }} /></div>
+                      </div>
+                    )
+                  ))}
+                  {conflicts.length > 1 && (
+                    <div className="lf-media-assets__conflict-bulk">
+                      {hasChecksum && (
+                        <button type="button" onClick={() => void resolveConflictsOfType('checksum_duplicate', 'use_existing')}>
+                          {messages.conflictUseExistingAll}
+                        </button>
+                      )}
+                      {hasName && (
+                        <button type="button" onClick={() => void resolveConflictsOfType('name_clash', 'replace')}>
+                          {messages.conflictReplaceAllNames}
+                        </button>
+                      )}
+                      <button type="button" onClick={() => void resolveAllKeepBoth()}>{messages.conflictKeepBothAll}</button>
+                      <button type="button" onClick={cancelAllConflicts}>{messages.conflictCancelAll}</button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
         <div className="lf-media-assets__main">

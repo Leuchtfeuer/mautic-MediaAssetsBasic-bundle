@@ -40,6 +40,7 @@ final class IndexMediaCommandTest extends TestCase
         $this->assertSame(0, $status);
         $display = $this->tester->getDisplay();
         $this->assertStringContainsString('Files indexed (new)', $display);
+        $this->assertStringContainsString('of which duplicate checksum', $display);
         $this->assertStringContainsString('Media index run finished.', $display);
         $this->assertStringNotContainsString('Dry run', $display);
     }

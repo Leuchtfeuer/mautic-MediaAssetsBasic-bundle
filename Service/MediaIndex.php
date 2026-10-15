@@ -27,6 +27,9 @@ final class MediaIndex implements MediaIndexer
     /** @var array<string, MediaAssetFolder> */
     private array $folderCache = [];
 
+    /** @var array<string, true> */
+    private array $seenChecksums = [];
+
     public function __construct(
         private readonly MediaPath $paths,
         private readonly ImageInspector $inspector,
@@ -85,6 +88,7 @@ final class MediaIndex implements MediaIndexer
         }
 
         $this->persistFile(
+            $absolute,
             $newRelative,
             MediaIndexPath::filename($newRelative),
             $inspected->mime,
@@ -117,6 +121,7 @@ final class MediaIndex implements MediaIndexer
         $this->seenFilePaths   = [];
         $this->seenFolderPaths = [];
         $this->folderCache     = [];
+        $this->seenChecksums   = [];
         $summary               = new MediaIndexRunSummary();
 
         $root = $this->paths->root();
@@ -190,13 +195,17 @@ final class MediaIndex implements MediaIndexer
             return $summary->withSkipped();
         }
 
-        $existing = $this->files->findOneByRelativePath($relative);
-        if (!$reindexAll && $existing instanceof MediaAssetFile && $existing->isActive()
+        $existing          = $this->files->findOneByRelativePath($relative);
+        $needsHashBackfill = !$existing instanceof MediaAssetFile
+            || null === $existing->getChecksum()
+            || '' === $existing->getChecksum();
+        if (!$reindexAll && !$needsHashBackfill && $existing->isActive()
             && $existing->getFileMtime() === $mtime && $existing->getBytes() === $bytes) {
             return $summary;
         }
 
         return $this->persistFile(
+            $absolute,
             $relative,
             MediaIndexPath::filename($relative),
             $inspected->mime,
@@ -227,6 +236,7 @@ final class MediaIndex implements MediaIndexer
         $existing = $this->files->findOneByRelativePath($relative);
 
         $this->persistFile(
+            $absolute,
             $relative,
             MediaIndexPath::filename($relative),
             $inspected->mime,
@@ -240,6 +250,7 @@ final class MediaIndex implements MediaIndexer
     }
 
     private function persistFile(
+        string $absolute,
         string $relative,
         string $filename,
         string $mime,
@@ -251,6 +262,12 @@ final class MediaIndex implements MediaIndexer
         MediaIndexRunSummary $summary,
     ): MediaIndexRunSummary {
         if (MediaIndexPath::isHiddenRelativePath($relative)) {
+            return $summary->withSkipped();
+        }
+
+        try {
+            $checksum = FileChecksum::hashFile($absolute);
+        } catch (ImageRejectedException) {
             return $summary->withSkipped();
         }
 
@@ -274,15 +291,31 @@ final class MediaIndex implements MediaIndexer
             ->setHeight($height)
             ->setBytes($bytes)
             ->setFileMtime($mtime)
+            ->setChecksum($checksum)
             ->setFolder($folder)
             ->setMissingSince(null);
+
+        if ($created || null === $file->getDateAdded()) {
+            $file->setDateAdded(new \DateTimeImmutable());
+        }
+
+        $duplicateChecksum = $created && (
+            isset($this->seenChecksums[$checksum])
+            || $this->files->hasOtherActiveWithChecksum($checksum, $relative)
+        );
+        $this->seenChecksums[$checksum] = true;
 
         if (!$this->dryRun) {
             $this->entityManager->persist($file);
         }
 
         if ($created) {
-            return $summary->withFilesIndexed();
+            $summary = $summary->withFilesIndexed();
+            if ($duplicateChecksum) {
+                $summary = $summary->withFilesIndexedDuplicateChecksum();
+            }
+
+            return $summary;
         }
 
         return $summary->withFilesUpdated();

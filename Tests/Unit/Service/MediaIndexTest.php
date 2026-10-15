@@ -75,6 +75,25 @@ final class MediaIndexTest extends TestCase
         $this->files->method('findAllIndexed')->willReturnCallback(
             fn (): array => array_values($this->fileStore),
         );
+        $this->files->method('hasOtherActiveWithChecksum')->willReturnCallback(
+            function (string $checksum, ?string $excludeRelativePath = null): bool {
+                foreach ($this->fileStore as $file) {
+                    if (!$file->isActive()) {
+                        continue;
+                    }
+                    if ($file->getChecksum() !== $checksum) {
+                        continue;
+                    }
+                    if (null !== $excludeRelativePath && $file->getRelativePath() === $excludeRelativePath) {
+                        continue;
+                    }
+
+                    return true;
+                }
+
+                return false;
+            },
+        );
         $this->entityManager->method('persist')->willReturnCallback(function (object $entity): void {
             $this->persisted[] = $entity;
             if ($entity instanceof MediaAssetFolder) {
@@ -218,6 +237,36 @@ final class MediaIndexTest extends TestCase
         $image   = $storage->store($this->directory, 'hero.png', $this->png());
         $mtime   = filemtime($this->directory.'/'.$image->name);
         $this->assertNotFalse($mtime);
+        $checksum = hash_file('sha256', $this->directory.'/'.$image->name);
+        $this->assertIsString($checksum);
+
+        $existing = new MediaAssetFile();
+        $existing->setRelativePath($image->name)
+            ->setFilename($image->name)
+            ->setMime('image/png')
+            ->setWidth($image->width)
+            ->setHeight($image->height)
+            ->setBytes($image->bytes)
+            ->setFileMtime($mtime)
+            ->setChecksum($checksum)
+            ->setDateAdded(new \DateTimeImmutable());
+        $this->fileStore[$image->name] = $existing;
+
+        $default = $this->index()->run(false, false);
+        $this->assertSame(0, $default->filesIndexed);
+        $this->assertSame(0, $default->filesUpdated);
+
+        $all = $this->index()->run(true, false);
+        $this->assertSame(0, $all->filesIndexed);
+        $this->assertSame(1, $all->filesUpdated);
+    }
+
+    public function testNullChecksumIsBackfilledEvenWhenMtimeAndBytesMatch(): void
+    {
+        $storage = new ImageStorage(new ImageInspector());
+        $image   = $storage->store($this->directory, 'hero.png', $this->png());
+        $mtime   = filemtime($this->directory.'/'.$image->name);
+        $this->assertNotFalse($mtime);
 
         $existing = new MediaAssetFile();
         $existing->setRelativePath($image->name)
@@ -229,13 +278,25 @@ final class MediaIndexTest extends TestCase
             ->setFileMtime($mtime);
         $this->fileStore[$image->name] = $existing;
 
-        $default = $this->index()->run(false, false);
-        $this->assertSame(0, $default->filesIndexed);
-        $this->assertSame(0, $default->filesUpdated);
+        $summary = $this->index()->run(false, false);
 
-        $all = $this->index()->run(true, false);
-        $this->assertSame(0, $all->filesIndexed);
-        $this->assertSame(1, $all->filesUpdated);
+        $this->assertSame(0, $summary->filesIndexed);
+        $this->assertSame(1, $summary->filesUpdated);
+        $this->assertNotNull($existing->getChecksum());
+        $this->assertInstanceOf(\DateTimeImmutable::class, $existing->getDateAdded());
+    }
+
+    public function testReportsDuplicateChecksumAmongNewlyIndexedFiles(): void
+    {
+        $storage = new ImageStorage(new ImageInspector());
+        $storage->store($this->directory, 'a.png', $this->png());
+        mkdir($this->directory.'/other', 0775, true);
+        $storage->store($this->directory.'/other', 'b.png', $this->png(), 'other');
+
+        $summary = $this->index()->run(false, false);
+
+        $this->assertSame(2, $summary->filesIndexed);
+        $this->assertSame(1, $summary->filesIndexedDuplicateChecksum);
     }
 
     private function index(): MediaIndex

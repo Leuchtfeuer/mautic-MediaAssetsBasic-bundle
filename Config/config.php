@@ -19,6 +19,11 @@ return [
                 'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\ImageController::uploadAction',
                 'method'     => 'POST',
             ],
+            'leuchtfeuer_media_assets_basic_image_upload_check' => [
+                'path'       => '/media-assets-basic/images/upload/check',
+                'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\ImageController::checkUploadAction',
+                'method'     => 'POST',
+            ],
             'leuchtfeuer_media_assets_basic_image_import' => [
                 'path'       => '/media-assets-basic/images/import',
                 'controller' => 'MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller\ImageController::importAction',
