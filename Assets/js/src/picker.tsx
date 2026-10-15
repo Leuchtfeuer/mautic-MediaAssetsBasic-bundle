@@ -853,6 +853,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                       type="button"
                       key={image.url}
                       className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
+                      title={image.path}
                       aria-selected={selectedPaths.has(image.path)}
                       draggable
                       onDragStart={(event) => {
@@ -887,7 +888,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                           {`${image.width}×${image.height} · ${formatBytes(image.bytes, messages)}`}
                         </span>
                         {searchActive && (
-                          <span className="lf-media-assets__meta-path" title={image.path}>
+                          <span className="lf-media-assets__meta-path">
                             {folderLabel}
                           </span>
                         )}
