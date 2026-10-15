@@ -734,10 +734,27 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
           >
             <div className="lf-media-assets__scroll">
               <div className="lf-media-assets__search">
-                <span className="lf-media-assets__search-icon" aria-hidden="true">⌕</span>
+                <button
+                  type="button"
+                  className="lf-media-assets__search-action"
+                  aria-label={'' !== searchInput ? messages.searchClear : messages.searchPlaceholder}
+                  data-search-action={'' !== searchInput ? 'clear' : 'search'}
+                  onClick={() => {
+                    if ('' !== searchInput) {
+                      clearSearch();
+                    } else {
+                      searchInputRef.current?.focus();
+                    }
+                  }}
+                >
+                  <i
+                    className={'' !== searchInput ? 'ri-eraser-line ri-lg' : 'ri-search-line ri-lg'}
+                    aria-hidden="true"
+                  />
+                </button>
                 <input
                   ref={searchInputRef}
-                  type="text"
+                  type="search"
                   className="lf-media-assets__search-input"
                   autoComplete="off"
                   value={searchInput}
@@ -751,16 +768,6 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                     }
                   }}
                 />
-                {'' !== searchInput && (
-                  <button
-                    type="button"
-                    className="lf-media-assets__search-clear"
-                    aria-label={messages.searchClear}
-                    onClick={clearSearch}
-                  >
-                    ×
-                  </button>
-                )}
               </div>
               {searchActive && images.length > 0 && (
                 <p className="lf-media-assets__search-scope">
