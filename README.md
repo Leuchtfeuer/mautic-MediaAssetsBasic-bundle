@@ -105,6 +105,8 @@ Dimensions and technical metadata are **not** read during picker requests — th
 
 Command name: `leuchtfeuer:media:index-media`.
 
+Recommended invocation: `nice -n 10 ionice -c2 -n7 php bin/console leuchtfeuer:media:index-media`
+
 **Default (without `--all`):**
 
 1. Walk the media root (include **empty** folders; **do not** follow symlinks).
