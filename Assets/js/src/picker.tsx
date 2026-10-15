@@ -769,50 +769,52 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   }}
                 />
               </div>
-              {searchActive && images.length > 0 && (
-                <p className="lf-media-assets__search-scope">
-                  <span>
-                    {searchEverywhere
-                      ? messages.searchScopeEverywhere
-                      : fill(messages.searchScope, { folder: scopeFolderName })}
-                  </span>
-                  {!searchEverywhere && (
-                    <button
-                      type="button"
-                      className="lf-media-assets__search-everywhere"
-                      onClick={() => {
-                        setSearchEverywhere(true);
-                        setPage(1);
-                      }}
-                    >
-                      {messages.searchEverywhere}
-                    </button>
-                  )}
+              {searchActive && searchEverywhere ? (
+                <p className="lf-media-assets__search-scope" aria-live="polite">
+                  {messages.searchScopeEverywhere}
                 </p>
-              )}
-              <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
-                {crumbs.map((crumb, index) => {
-                  const crumbPath = crumbPaths[index] ?? '';
-                  const isCurrent = index === crumbs.length - 1;
+              ) : (
+                <>
+                  {searchActive && images.length > 0 && (
+                    <p className="lf-media-assets__search-scope">
+                      <span>{fill(messages.searchScope, { folder: scopeFolderName })}</span>
+                      <button
+                        type="button"
+                        className="lf-media-assets__search-everywhere"
+                        onClick={() => {
+                          setSearchEverywhere(true);
+                          setPage(1);
+                        }}
+                      >
+                        {messages.searchEverywhere}
+                      </button>
+                    </p>
+                  )}
+                  <nav className="lf-media-assets__breadcrumb" aria-label={crumbs.join(' / ')}>
+                    {crumbs.map((crumb, index) => {
+                      const crumbPath = crumbPaths[index] ?? '';
+                      const isCurrent = index === crumbs.length - 1;
 
-                  return (
-                    <span key={`${crumbPath}-${index}`}>
-                      {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
-                      {isCurrent ? (
-                        <span className="is-current" aria-current="page">{crumb}</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="lf-media-assets__breadcrumb-link"
-                          onClick={() => selectFolder(crumbPath)}
-                        >
-                          {crumb}
-                        </button>
-                      )}
-                    </span>
-                  );
-                })}
-              </nav>
+                      return (
+                        <span key={`${crumbPath}-${index}`}>
+                          {index > 0 && <span className="lf-media-assets__breadcrumb-sep"> / </span>}
+                          {isCurrent ? (
+                            <span className="is-current" aria-current="page">{crumb}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="lf-media-assets__breadcrumb-link"
+                              onClick={() => selectFolder(crumbPath)}
+                            >
+                              {crumb}
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </nav>
+                </>
+              )}
               {error && (
                 <DismissibleAlert message={error} closeLabel={messages.close} onDismiss={() => setError('')} />
               )}
