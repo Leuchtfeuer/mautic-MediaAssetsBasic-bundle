@@ -86,7 +86,9 @@ final class PublicHostGuardTest extends TestCase
     private function guard(array $addresses): PublicHostGuard
     {
         return new PublicHostGuard(new class($addresses) implements HostResolver {
-            /** @param array<string, list<string>> $addresses */
+            /**
+             * @param array<string, list<string>> $addresses
+             */
             public function __construct(private array $addresses)
             {
             }

@@ -28,6 +28,7 @@ final readonly class UrlImageImporter
     public function __construct(
         private PublicHostGuard $guard,
         private ImageStorage $storage,
+        private ?Client $client = null,
     ) {
     }
 
@@ -63,7 +64,7 @@ final readonly class UrlImageImporter
             throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
         }
 
-        $client = new Client([
+        $client = $this->client ?? new Client([
             RequestOptions::CONNECT_TIMEOUT => self::TIMEOUT_SECONDS,
             RequestOptions::HEADERS         => ['User-Agent' => 'Mautic Media Assets'],
             RequestOptions::HTTP_ERRORS     => false,
@@ -83,8 +84,10 @@ final readonly class UrlImageImporter
                         $this->guard->safeAddresses((string) $uri);
                     },
                 ],
-                RequestOptions::ON_HEADERS => function (ResponseInterface $response) use ($maxBytes): void {
-                    $this->assertContentLengthWithinLimit($response, $maxBytes);
+                RequestOptions::ON_HEADERS => function (mixed $response) use ($maxBytes): void {
+                    if ($response instanceof ResponseInterface) {
+                        $this->assertContentLengthWithinLimit($response, $maxBytes);
+                    }
                 },
                 'progress' => function (int $downloadTotal, int $downloadedBytes) use ($maxBytes): void {
                     if ($maxBytes > 0 && $downloadedBytes > $maxBytes) {
@@ -110,7 +113,7 @@ final readonly class UrlImageImporter
                 throw new ImageRejectedException(Translation::ERROR_TIMEOUT);
             }
 
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+            throw $this->downloadFailed($exception instanceof RequestException ? $exception->getResponse() : null);
         } catch (TransferException $exception) {
             fclose($temp);
             $previous = $exception->getPrevious();
@@ -118,12 +121,12 @@ final readonly class UrlImageImporter
                 throw $previous;
             }
 
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+            throw $this->downloadFailed();
         }
 
         if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
             fclose($temp);
-            throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+            throw $this->downloadFailed($response);
         }
 
         rewind($temp);
@@ -149,6 +152,19 @@ final readonly class UrlImageImporter
         if ($maxBytes > 0 && '' !== $length && is_numeric($length) && (int) $length > $maxBytes) {
             throw new ImageRejectedException(Translation::ERROR_TOO_LARGE, ['%limit%' => IniSize::uploadMaxFilesize()]);
         }
+    }
+
+    private function downloadFailed(?ResponseInterface $response = null): ImageRejectedException
+    {
+        if (!$response instanceof ResponseInterface) {
+            return new ImageRejectedException(Translation::ERROR_DOWNLOAD);
+        }
+
+        $status = $response->getStatusCode();
+        $reason = trim($response->getReasonPhrase());
+        $label  = '' !== $reason ? $status.' '.$reason : (string) $status;
+
+        return new ImageRejectedException(Translation::ERROR_DOWNLOAD_HTTP, ['%status%' => $label]);
     }
 
     private function effectiveUrl(string $url, ResponseInterface $response): string

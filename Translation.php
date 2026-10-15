@@ -56,6 +56,8 @@ final class Translation
 
     public const ERROR_DOWNLOAD = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.download';
 
+    public const ERROR_DOWNLOAD_HTTP = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.download_http';
+
     public const ERROR_TOO_LARGE = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.too_large';
 
     public const ERROR_TIMEOUT = 'mautic.plugin.leuchtfeuermediaassetsbasic.error.timeout';
