@@ -109,9 +109,9 @@ function folderDisplayName(path: string, home: string): string {
   return parts[parts.length - 1] || home;
 }
 
-/** Middle-truncate a folder path for tile display (keeps trailing slash). */
+/** Middle-truncate a folder path for tile display (keeps trailing slash; root is "/"). */
 function truncateFolderPath(folderPath: string, maxLength = 28): string {
-  const withSlash = '' === folderPath ? '' : `${folderPath}/`;
+  const withSlash = '' === folderPath ? '/' : `${folderPath}/`;
   if (withSlash.length <= maxLength) {
     return withSlash;
   }
