@@ -650,3 +650,58 @@
 .lf-media-assets__empty {
   color: #525252;
 }
+
+/* Small viewports: folders above the image grid so the gallery keeps usable width. */
+@media (max-width: 720px) {
+  .lf-media-assets__dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+
+  .lf-media-assets__header,
+  .lf-media-assets__footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .lf-media-assets__pager {
+    margin-left: auto;
+  }
+
+  .lf-media-assets__main {
+    flex-direction: column;
+  }
+
+  .lf-media-assets__sidebar {
+    width: 100%;
+    max-height: 32%;
+    flex-shrink: 0;
+    border-right: 0;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .lf-media-assets__folders {
+    min-height: 0;
+  }
+
+  .lf-media-assets__body {
+    min-height: 0;
+  }
+
+  .lf-media-assets__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .lf-media-assets__preview {
+    height: 110px;
+  }
+
+  .lf-media-assets__preview img {
+    max-height: 110px;
+  }
+
+  .lf-media-assets__meta {
+    padding: 8px;
+  }
+}
