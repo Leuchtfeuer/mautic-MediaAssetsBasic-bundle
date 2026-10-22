@@ -7,6 +7,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class ImageInspectorTest extends TestCase
@@ -114,9 +115,7 @@ final class ImageInspectorTest extends TestCase
         (new ImageInspector())->inspectContents($svg, true);
     }
 
-    /**
-     * @dataProvider unsafeSvgBypassProvider
-     */
+    #[DataProvider('unsafeSvgBypassProvider')]
     public function testRejectsEncodedAndNamespacedSvgBypasses(string $svg): void
     {
         $this->expectException(ImageRejectedException::class);
