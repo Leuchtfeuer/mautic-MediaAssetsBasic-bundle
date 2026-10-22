@@ -108,16 +108,40 @@ final class ImageInspector
             throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
 
-        $lower = strtolower($contents);
-        foreach (['<script', '<foreignobject', 'javascript:', 'data:text/html', '@import', '<?php'] as $needle) {
-            if (str_contains($lower, $needle)) {
-                throw new ImageRejectedException(Translation::ERROR_TYPE);
-            }
-        }
-
-        if (preg_match('/\son[a-z]+\s*=/i', $contents)) {
+        // DTD entity expansion can hide payloads (e.g. <!ENTITY x "<script>">).
+        if (1 === preg_match('/<!ENTITY\b|<!DOCTYPE\b/i', $contents)) {
             throw new ImageRejectedException(Translation::ERROR_TYPE);
         }
+
+        $normalized = $this->normalizeSvgForSafetyCheck($contents);
+        // Collapse control/whitespace so java&#9;script: / java\nscript: still match.
+        $compact    = preg_replace('/[\x00-\x20]+/', '', $normalized) ?? $normalized;
+
+        if (
+            1 === preg_match('/<\s*(?:\w+:)?script\b/', $normalized)
+            || 1 === preg_match('/<\s*(?:\w+:)?foreignobject\b/', $normalized)
+            || str_contains($compact, 'javascript:')
+            || str_contains($compact, 'data:text/html')
+            || str_contains($normalized, '@import')
+            || 1 === preg_match('/<\?(?:php|=|\s)/', $normalized)
+            || 1 === preg_match('/\son[a-z]+\s*=/', $normalized)
+        ) {
+            throw new ImageRejectedException(Translation::ERROR_TYPE);
+        }
+    }
+
+    private function normalizeSvgForSafetyCheck(string $contents): string
+    {
+        $decoded = str_replace("\0", '', $contents);
+        for ($i = 0; $i < 3; ++$i) {
+            $next = html_entity_decode($decoded, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($next === $decoded) {
+                break;
+            }
+            $decoded = $next;
+        }
+
+        return strtolower($decoded);
     }
 
     /**
