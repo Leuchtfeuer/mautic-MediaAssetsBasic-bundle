@@ -1,0 +1,64 @@
+{
+  "name": "leuchtfeuer/mautic-mediaassetsbasic-bundle",
+  "description": "Powerful Media & Assets Manager for organizing and picking images etc. in the Mautic builders",
+  "type": "mautic-plugin",
+  "license": "GPL-3.0",
+  "keywords": ["mautic", "plugin", "integration", "media", "assets", "image", "images", "editor", "builder"],
+  "authors": [
+    {
+      "name": "Leuchtfeuer Digital Marketing GmbH",
+      "email": "mautic-plugins@Leuchtfeuer.com",
+      "homepage": "https://Leuchtfeuer.com/mautic/",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "mautic/core-lib": "^7.0"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.4",
+    "phpstan/phpstan": "^2.0",
+    "phpunit/phpunit": "^10.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\": ""
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MauticPlugin\\LeuchtfeuerMediaAssetsBasicBundle\\Tests\\": "Tests"
+    }
+  },
+  "extra": {
+    "install-directory-name": "LeuchtfeuerMediaAssetsBasicBundle"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "fixcs": "../../bin/php-cs-fixer fix --config .php-cs-fixer.php --show-progress dots -v",
+    "rector": "cd ../.. && bin/rector process --ansi --config rector.php plugins/LeuchtfeuerMediaAssetsBasicBundle",
+    "phpstan": "../../bin/phpstan analyse . --memory-limit=1G -c phpstan.neon",
+    "phpunit": "../../bin/phpunit -d memory_limit=2048M --configuration phpunit.xml --fail-on-warning",
+    "unit": "../../bin/phpunit -d memory_limit=2048M --configuration phpunit.xml --fail-on-warning --testsuite=unit",
+    "functional": "cd ../.. && APP_ENV=test APP_DEBUG=0 KERNEL_CLASS=AppTestKernel bin/phpunit -d memory_limit=2G -c plugins/LeuchtfeuerMediaAssetsBasicBundle/phpunit.xml --testsuite functional",
+    "coverage": "../../bin/phpunit -d memory_limit=2048M --configuration phpunit.xml --fail-on-warning --coverage-text --coverage-html=Tests/Coverage",
+    "e2e": "cd ../.. && bin/codecept run acceptance -c plugins/LeuchtfeuerMediaAssetsBasicBundle/codeception.yml",
+    "test": "@phpunit",
+    "dod": "bash checkDod.sh",
+    "all": [
+      "@rector",
+      "@fixcs",
+      "@phpstan",
+      "@phpunit",
+      "@e2e",
+      "@dod"
+    ]
+  },
+  "config": {
+    "allow-plugins": {
+      "phpstan/extension-installer": true
+    }
+  }
+}

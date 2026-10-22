@@ -1,0 +1,10 @@
+/vendor/
+/node_modules/
+composer.lock
+.php-cs-fixer.cache
+.phpunit.result.cache
+.phpstan-cache/
+.phpunit.cache/
+var/
+Tests/_output/
+Tests/_data/
