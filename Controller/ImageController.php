@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Controller;
 
 use Mautic\CoreBundle\Controller\AjaxController;
+use Mautic\CoreBundle\Helper\PathsHelper;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\MediaIndexer;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\UploadConflict;
@@ -214,6 +215,7 @@ final class ImageController extends AjaxController
         LandingPagePickerContext $pickerContext,
         MediaIndexer $index,
         UploadConflictDetector $conflicts,
+        PathsHelper $pathsHelper,
     ): JsonResponse {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -235,7 +237,7 @@ final class ImageController extends AjaxController
             $downloaded = $importer->downloadBody(trim($url));
             $name       = $importer->nameFromDownloadedUrl($downloaded['url']);
             $intended   = $storage->intendedContentsName($name, $downloaded['body'], $allowSvg);
-            $temp       = tempnam(sys_get_temp_dir(), 'lf-media-import');
+            $temp       = tempnam($pathsHelper->getTemporaryPath(), 'lf-media-import');
             if (false === $temp) {
                 throw new ImageRejectedException(Translation::ERROR_DOWNLOAD);
             }
