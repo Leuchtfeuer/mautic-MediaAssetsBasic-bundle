@@ -12,7 +12,8 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\RenditionBusyExcept
  */
 final class RenditionLock
 {
-    public const DEFAULT_TIMEOUT_SECONDS     = 20;
+    /** Large phone photos + Imagick often need more than 20s on shared hosts. */
+    public const DEFAULT_TIMEOUT_SECONDS     = 90;
     public const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
     /** @var resource|null */

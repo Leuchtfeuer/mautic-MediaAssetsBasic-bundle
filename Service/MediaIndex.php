@@ -69,8 +69,8 @@ final class MediaIndex implements MediaIndexer
             }
 
             try {
-                // Rebuild so replace/import at the same path cannot keep stale ready thumbs.
-                $this->renditions->rebuildForFile($file, true);
+                // Wait for the lock (failFast=false) so upload actually produces thumbs/standard.
+                $this->renditions->rebuildForFile($file, false);
             } catch (RenditionBusyException) {
                 // Master is already stored and indexed; derived files catch up on a later run.
             }
@@ -127,7 +127,7 @@ final class MediaIndex implements MediaIndexer
         }
 
         try {
-            $this->renditions->rebuildForFile($file, true);
+            $this->renditions->rebuildForFile($file, false);
         } catch (RenditionBusyException) {
             // Filesystem move + index path update already committed; fill derived files later.
         }

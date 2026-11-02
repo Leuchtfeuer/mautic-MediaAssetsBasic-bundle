@@ -10,6 +10,12 @@
   color: #161616;
 }
 
+/* GrapesJS keeps its Asset Manager modal chrome under the custom picker; hide the orphan shell. */
+body:has(#lf-media-assets-basic) .gjs-mdl-container {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .lf-media-assets__dialog {
   position: relative;
   display: flex;
