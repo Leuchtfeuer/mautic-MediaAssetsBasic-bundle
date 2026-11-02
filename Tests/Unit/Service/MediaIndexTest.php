@@ -353,6 +353,21 @@ final class MediaIndexTest extends TestCase
         $this->index()->registerUploaded($listed, false);
     }
 
+    public function testRegisterUploadedKeepsIndexWhenRenditionLockIsBusy(): void
+    {
+        $listed = (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->once())
+            ->method('rebuildForFile')
+            ->willThrowException(new RenditionBusyException(5));
+        $this->renditions = $renditions;
+
+        $this->index()->registerUploaded($listed, false);
+
+        $this->assertArrayHasKey('hero.png', $this->fileStore);
+    }
+
     public function testRegisterMovedKeepsIndexWhenRenditionLockIsBusy(): void
     {
         $listed = (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());

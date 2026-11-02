@@ -76,7 +76,7 @@ Behaviour:
 - If the original is already ≤ 1600 on the long edge, no standard file is written and insert keeps the original.
 - Upload and import generate renditions in the same request (when the lock is free). The index command fills gaps for existing files.
 
-Derived files mirror the folder tree under `_renditions/`, e.g. `Brand/hero.jpg` → `_renditions/Brand/hero_400.jpg` and `_renditions/Brand/hero_1600.jpg`. Generation prefers Imagick and falls back to GD. Rows are stored in `lf_media_renditions` (`ready` / `failed`); a later ensure run retries failures. Concurrent HTTP generation uses a process lock; if another run holds it or the per-file budget (~20s) is exceeded, the API responds with **503** and `Retry-After`.
+Derived files mirror the folder tree under `_renditions/`, e.g. `Brand/hero.jpg` → `_renditions/Brand/hero_400.jpg` and `_renditions/Brand/hero_1600.jpg`. Generation prefers Imagick and falls back to GD. Rows are stored in `lf_media_renditions` (`ready` / `failed` / `not_needed`); a later ensure run retries failures. Concurrent generation uses a process lock (~20s per file). If the lock is busy during upload or move, the master file and index update still succeed and derived files catch up on a later index run.
 
 ### Selection and bulk move
 
@@ -153,7 +153,7 @@ Unique key: **`relative_path`** (separate folder and file tables).
 
 **File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `checksum` (SHA-256, nullable until indexed), `date_added` (nullable until indexed), `missing_since` (nullable).
 
-**Renditions (`lf_media_renditions`):** `file_id`, preset (`standard` / `thumb`), format, dimensions, bytes, `storage_path`, state (`ready` / `failed`), optional failure reason, timestamps. The indexer ignores the `_renditions/` tree as source files.
+**Renditions (`lf_media_renditions`):** `file_id`, preset (`standard` / `thumb`), format, dimensions, bytes, `storage_path`, state (`ready` / `failed` / `not_needed`), optional failure reason, timestamps. `not_needed` marks an intentional skip (e.g. standard when the master is already ≤ 1600, or animated GIF). The indexer ignores the `_renditions/` tree as source files.
 
 ### Picker / API
 

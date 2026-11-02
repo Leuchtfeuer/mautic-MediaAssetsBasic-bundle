@@ -64,9 +64,15 @@ final class MediaIndex implements MediaIndexer
 
         if ($generateRenditions) {
             $file = $this->files->findOneByRelativePath($relative);
-            if ($file instanceof MediaAssetFile) {
+            if (!$file instanceof MediaAssetFile) {
+                return;
+            }
+
+            try {
                 // Rebuild so replace/import at the same path cannot keep stale ready thumbs.
                 $this->renditions->rebuildForFile($file, true);
+            } catch (RenditionBusyException) {
+                // Master is already stored and indexed; derived files catch up on a later run.
             }
         }
     }

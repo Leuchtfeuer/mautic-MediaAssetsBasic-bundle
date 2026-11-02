@@ -152,12 +152,24 @@ final class ImageLibraryTest extends TestCase
         $file = $this->file('hero.png', 'Brand/hero.png', 2000, 1000, 5000, 1);
         $file->setId(12);
         $this->files->method('listInFolder')->willReturn(['images' => [$file], 'total' => 1]);
-        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
+        $this->renditions->expects($this->once())->method('mapReadyByFileIds')->with([12])->willReturn([]);
 
         $page = $this->library()->listImages('', 1, 24);
 
         $this->assertNull($page['images'][0]->thumbPath);
         $this->assertSame('Brand/hero.png', $page['images'][0]->insertPath);
+    }
+
+    public function testToListedImageWithEmptyReadyMapDoesNotQueryAgain(): void
+    {
+        $file = $this->file('hero.png', 'Brand/hero.png', 2000, 1000, 5000, 1);
+        $file->setId(12);
+        $this->renditions->expects($this->never())->method('mapReadyByFileIds');
+
+        $listed = $this->library()->toListedImage($file, []);
+
+        $this->assertNull($listed->thumbPath);
+        $this->assertSame('Brand/hero.png', $listed->insertPath);
     }
 
     public function testSvgListedImageUsesOriginalForThumbAndInsert(): void

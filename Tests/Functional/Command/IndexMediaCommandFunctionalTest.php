@@ -195,9 +195,17 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
         $this->assertInstanceOf(MediaAssetFile::class, $file);
 
         $rows = $this->em->getRepository(MediaRendition::class)->findBy(['file' => $file]);
-        $this->assertCount(1, $rows);
-        $this->assertSame(RenditionPreset::Thumb, $rows[0]->getPreset());
-        $this->assertSame(RenditionState::Ready, $rows[0]->getState());
+        $this->assertCount(2, $rows);
+        $byPreset = [];
+        foreach ($rows as $row) {
+            $byPreset[$row->getPreset()->value] = $row;
+        }
+        $thumb    = $byPreset[RenditionPreset::Thumb->value] ?? null;
+        $standard = $byPreset[RenditionPreset::Standard->value] ?? null;
+        $this->assertInstanceOf(MediaRendition::class, $thumb);
+        $this->assertInstanceOf(MediaRendition::class, $standard);
+        $this->assertSame(RenditionState::Ready, $thumb->getState());
+        $this->assertSame(RenditionState::NotNeeded, $standard->getState());
         $this->assertFalse(is_file($this->mediaRoot().'/'.RenditionPaths::relativePathFor($name, RenditionPreset::Standard)));
     }
 

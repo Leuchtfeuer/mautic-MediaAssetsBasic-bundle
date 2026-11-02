@@ -39,6 +39,11 @@ class RenditionManager
             return new RenditionEnsureResult(skipped: 1);
         }
 
+        // Cheap path: skip lock/inspect when every preset is already satisfied on disk/DB.
+        if (!$this->needsGeneration($file)) {
+            return new RenditionEnsureResult(skipped: count(RenditionPreset::cases()));
+        }
+
         return $this->lock->withLock(function (float $deadline) use ($file, $dryRun): RenditionEnsureResult {
             $this->lock->assertWithinDeadline($deadline);
 
@@ -55,7 +60,7 @@ class RenditionManager
             $this->lock->assertWithinDeadline($deadline);
             foreach ($this->renditions->findForFile($file) as $row) {
                 $absolute = $this->paths->root().'/'.$row->getStoragePath();
-                if (is_file($absolute)) {
+                if ('' !== $row->getStoragePath() && is_file($absolute)) {
                     @unlink($absolute);
                 }
                 $this->entityManager->remove($row);
@@ -64,6 +69,42 @@ class RenditionManager
 
             return $this->ensureLocked($file, false, $deadline);
         }, $failFast);
+    }
+
+    /**
+     * True when a lock + inspect pass is required (missing, failed, or ready file gone).
+     */
+    public function needsGeneration(MediaAssetFile $file): bool
+    {
+        if (!$file->isActive() || ImageInspector::SVG_MIME === $file->getMime()) {
+            return false;
+        }
+
+        $byPreset = [];
+        foreach ($this->renditions->findForFile($file) as $row) {
+            $byPreset[$row->getPreset()->value] = $row;
+        }
+
+        foreach (RenditionPreset::cases() as $preset) {
+            if (!$this->presetSatisfied($byPreset[$preset->value] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function presetSatisfied(?MediaRendition $row): bool
+    {
+        if (!$row instanceof MediaRendition) {
+            return false;
+        }
+
+        if ($row->isNotNeeded()) {
+            return true;
+        }
+
+        return $row->isReady() && '' !== $row->getStoragePath() && is_file($this->paths->root().'/'.$row->getStoragePath());
     }
 
     private function ensureLocked(MediaAssetFile $file, bool $dryRun, float $deadline): RenditionEnsureResult
@@ -101,16 +142,27 @@ class RenditionManager
         bool $dryRun,
     ): RenditionEnsureResult {
         $existing = $this->renditions->findOneForFilePreset($file, $preset);
-        if ($existing instanceof MediaRendition && $existing->isReady() && is_file($this->paths->root().'/'.$existing->getStoragePath())) {
+        if ($this->presetSatisfied($existing)) {
             return new RenditionEnsureResult(skipped: 1);
         }
 
         if ($animatedGif && RenditionPreset::Standard === $preset) {
-            if ($existing instanceof MediaRendition && !$dryRun) {
-                $this->entityManager->remove($existing);
+            if ($dryRun) {
+                return new RenditionEnsureResult(skipped: 1);
             }
 
-            return new RenditionEnsureResult(skipped: 1);
+            return $this->persistNotNeeded($file, $preset, $existing);
+        }
+
+        // Prefer indexed dimensions over re-decoding when deciding standard is unnecessary.
+        if (RenditionPreset::Standard === $preset
+            && max($file->getWidth(), $file->getHeight()) <= $preset->longEdge()
+        ) {
+            if ($dryRun) {
+                return new RenditionEnsureResult(skipped: 1);
+            }
+
+            return $this->persistNotNeeded($file, $preset, $existing);
         }
 
         if ($dryRun) {
@@ -124,11 +176,7 @@ class RenditionManager
         }
 
         if (null === $generated) {
-            if ($existing instanceof MediaRendition) {
-                $this->entityManager->remove($existing);
-            }
-
-            return new RenditionEnsureResult(skipped: 1);
+            return $this->persistNotNeeded($file, $preset, $existing);
         }
 
         $row = $existing ?? new MediaRendition();
@@ -167,6 +215,40 @@ class RenditionManager
         $this->entityManager->flush();
 
         return $result;
+    }
+
+    private function persistNotNeeded(
+        MediaAssetFile $file,
+        RenditionPreset $preset,
+        ?MediaRendition $existing,
+    ): RenditionEnsureResult {
+        $row = $existing ?? new MediaRendition();
+        $now = new \DateTimeImmutable();
+        if (!$existing instanceof MediaRendition || null === $row->getDateAdded()) {
+            $row->setDateAdded($now);
+        }
+
+        if ('' !== $row->getStoragePath()) {
+            $absolute = $this->paths->root().'/'.$row->getStoragePath();
+            if (is_file($absolute)) {
+                @unlink($absolute);
+            }
+        }
+
+        $row->setFile($file)
+            ->setPreset($preset)
+            ->setFormat('')
+            ->setWidth(0)
+            ->setHeight(0)
+            ->setBytes(0)
+            ->setStoragePath('')
+            ->setState(RenditionState::NotNeeded)
+            ->setFailureReason(null)
+            ->setDateModified($now);
+
+        $this->entityManager->persist($row);
+
+        return new RenditionEnsureResult(skipped: 1);
     }
 
     private function persistFailed(

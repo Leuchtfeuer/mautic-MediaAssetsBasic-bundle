@@ -101,6 +101,7 @@ final class RenditionManagerTest extends TestCase
         file_put_contents($this->directory.'/'.$relative, $this->png());
         $file = $this->file($relative, 'image/png');
 
+        $this->renditions->method('findForFile')->willReturn([]);
         $this->renditions->method('findOneForFilePreset')->willReturn(null);
         $this->writer->method('isAnimatedGif')->willReturn(false);
         $this->writer->method('write')->willReturnCallback(
@@ -149,18 +150,44 @@ final class RenditionManagerTest extends TestCase
         file_put_contents($this->directory.'/_renditions/hero_400.png', 'x');
         file_put_contents($this->directory.'/_renditions/hero_1600.png', 'x');
 
-        $this->renditions->method('findOneForFilePreset')->willReturnCallback(
-            static fn (MediaAssetFile $f, RenditionPreset $preset): MediaRendition => RenditionPreset::Thumb === $preset
-                ? $existingThumb
-                : $existingStandard,
-        );
-        $this->writer->method('isAnimatedGif')->willReturn(false);
+        $this->renditions->method('findForFile')->willReturn([$existingThumb, $existingStandard]);
         $this->writer->expects($this->never())->method('write');
+        $this->renditions->expects($this->never())->method('findOneForFilePreset');
 
         $result = $this->manager()->ensureForFile($file);
 
         $this->assertSame(2, $result->skipped);
         $this->assertSame(0, $result->generated);
+    }
+
+    public function testPersistsNotNeededWhenStandardIsUnnecessary(): void
+    {
+        $relative = 'tiny.png';
+        file_put_contents($this->directory.'/'.$relative, $this->png());
+        $file = $this->file($relative, 'image/png', 100, 80);
+
+        $this->renditions->method('findForFile')->willReturn([]);
+        $this->renditions->method('findOneForFilePreset')->willReturn(null);
+        $this->writer->method('isAnimatedGif')->willReturn(false);
+        $this->writer->expects($this->once())->method('write')->willReturnCallback(
+            function (string $absolute, string $sourceRelative, RenditionPreset $preset): GeneratedRendition {
+                $this->assertSame(RenditionPreset::Thumb, $preset);
+                $path = '_renditions/tiny_400.png';
+
+                return new GeneratedRendition($this->directory.'/'.$path, $path, 'png', 100, 80, 12);
+            },
+        );
+
+        $result = $this->manager()->ensureForFile($file);
+
+        $this->assertSame(1, $result->generated);
+        $this->assertSame(1, $result->skipped);
+        $notNeeded = array_values(array_filter(
+            $this->persisted,
+            static fn (object $entity): bool => $entity instanceof MediaRendition && $entity->isNotNeeded(),
+        ));
+        $this->assertCount(1, $notNeeded);
+        $this->assertSame(RenditionPreset::Standard, $notNeeded[0]->getPreset());
     }
 
     public function testRebuildRemovesReadyRowsAndRegenerates(): void
@@ -215,31 +242,26 @@ final class RenditionManagerTest extends TestCase
             ->setState(RenditionState::Failed)
             ->setFailureReason('corrupt');
 
+        $this->renditions->method('findForFile')->willReturn([$failed]);
         $this->renditions->method('findOneForFilePreset')->willReturnCallback(
             static fn (MediaAssetFile $f, RenditionPreset $preset): ?MediaRendition => RenditionPreset::Thumb === $preset ? $failed : null,
         );
         $this->writer->method('isAnimatedGif')->willReturn(false);
         $this->writer->method('write')->willReturnCallback(
-            function (string $absolute, string $sourceRelative, RenditionPreset $preset): ?GeneratedRendition {
-                if (RenditionPreset::Standard === $preset) {
-                    return null;
-                }
-
-                return new GeneratedRendition(
-                    $this->directory.'/_renditions/hero_400.png',
-                    '_renditions/hero_400.png',
-                    'png',
-                    400,
-                    200,
-                    99,
-                );
-            },
+            fn (string $absolute, string $sourceRelative, RenditionPreset $preset): GeneratedRendition => new GeneratedRendition(
+                $this->directory.'/_renditions/hero_'.$preset->longEdge().'.png',
+                '_renditions/hero_'.$preset->longEdge().'.png',
+                'png',
+                $preset->longEdge(),
+                200,
+                99,
+            ),
         );
 
         $result = $this->manager()->ensureForFile($file);
 
-        $this->assertSame(1, $result->generated);
-        $this->assertSame(1, $result->skipped);
+        $this->assertSame(2, $result->generated);
+        $this->assertSame(0, $result->skipped);
         $this->assertSame(RenditionState::Ready, $failed->getState());
         $this->assertNull($failed->getFailureReason());
     }
@@ -250,6 +272,7 @@ final class RenditionManagerTest extends TestCase
         file_put_contents($this->directory.'/'.$relative, $this->png());
         $file = $this->file($relative, 'image/png');
 
+        $this->renditions->method('findForFile')->willReturn([]);
         $this->renditions->method('findOneForFilePreset')->willReturn(null);
         $this->writer->method('isAnimatedGif')->willReturn(false);
         $this->writer->method('write')->willThrowException(new \RuntimeException('decode failed'));
@@ -287,14 +310,14 @@ final class RenditionManagerTest extends TestCase
         );
     }
 
-    private function file(string $relative, string $mime): MediaAssetFile
+    private function file(string $relative, string $mime, int $width = 2000, int $height = 1000): MediaAssetFile
     {
         $file = new MediaAssetFile();
         $file->setRelativePath($relative)
             ->setFilename(basename($relative))
             ->setMime($mime)
-            ->setWidth(10)
-            ->setHeight(10)
+            ->setWidth($width)
+            ->setHeight($height)
             ->setBytes(10)
             ->setFileMtime(time());
 

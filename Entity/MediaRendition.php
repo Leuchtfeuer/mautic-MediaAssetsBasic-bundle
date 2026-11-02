@@ -214,4 +214,9 @@ class MediaRendition
     {
         return RenditionState::Ready === $this->getState();
     }
+
+    public function isNotNeeded(): bool
+    {
+        return RenditionState::NotNeeded === $this->getState();
+    }
 }

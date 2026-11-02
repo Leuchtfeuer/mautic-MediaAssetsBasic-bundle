@@ -70,18 +70,20 @@ final readonly class ImageLibrary
     }
 
     /**
-     * @param array<string, MediaRendition> $readyByPreset
+     * @param array<string, MediaRendition>|null $readyByPreset null = load for this file; [] = none ready (no extra query)
      */
-    public function toListedImage(MediaAssetFile $file, array $readyByPreset = []): ListedImage
+    public function toListedImage(MediaAssetFile $file, ?array $readyByPreset = null): ListedImage
     {
-        if ([] === $readyByPreset && null !== $file->getId()) {
-            $readyByPreset = $this->renditions->mapReadyByFileIds([$file->getId()])[$file->getId()] ?? [];
+        if (null === $readyByPreset) {
+            $readyByPreset = null !== $file->getId()
+                ? ($this->renditions->mapReadyByFileIds([$file->getId()])[$file->getId()] ?? [])
+                : [];
         }
 
-        $path      = $file->getRelativePath();
-        $thumb     = $readyByPreset[RenditionPreset::Thumb->value] ?? null;
-        $standard  = $readyByPreset[RenditionPreset::Standard->value] ?? null;
-        $isSvg     = ImageInspector::SVG_MIME === $file->getMime();
+        $path     = $file->getRelativePath();
+        $thumb    = $readyByPreset[RenditionPreset::Thumb->value] ?? null;
+        $standard = $readyByPreset[RenditionPreset::Standard->value] ?? null;
+        $isSvg    = ImageInspector::SVG_MIME === $file->getMime();
 
         return new ListedImage(
             $file->getFilename(),
