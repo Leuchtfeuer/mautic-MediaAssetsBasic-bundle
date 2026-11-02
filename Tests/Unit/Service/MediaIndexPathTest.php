@@ -26,7 +26,10 @@ final class MediaIndexPathTest extends TestCase
     {
         $this->assertTrue(MediaIndexPath::isHiddenEntry('.hidden'));
         $this->assertFalse(MediaIndexPath::isHiddenEntry('Brand'));
+        $this->assertTrue(MediaIndexPath::isHiddenEntry('_renditions'));
         $this->assertTrue(MediaIndexPath::isHiddenRelativePath('Brand/.cache'));
+        $this->assertTrue(MediaIndexPath::isHiddenRelativePath('_renditions'));
+        $this->assertTrue(MediaIndexPath::isHiddenRelativePath('_renditions/brand/hero_400.jpg'));
         $this->assertFalse(MediaIndexPath::isHiddenRelativePath('Brand/Campaign'));
         $this->assertFalse(MediaIndexPath::isHiddenRelativePath(''));
     }

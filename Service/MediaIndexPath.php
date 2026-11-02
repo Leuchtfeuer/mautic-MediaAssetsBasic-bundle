@@ -8,13 +8,17 @@ final class MediaIndexPath
 {
     public static function isHiddenEntry(string $name): bool
     {
-        return str_starts_with($name, '.');
+        return str_starts_with($name, '.') || RenditionPaths::isRenditionsEntry($name);
     }
 
     public static function isHiddenRelativePath(string $relativePath): bool
     {
         if ('' === $relativePath) {
             return false;
+        }
+
+        if (RenditionPaths::isRenditionsRelativePath($relativePath)) {
+            return true;
         }
 
         foreach (explode('/', $relativePath) as $segment) {
