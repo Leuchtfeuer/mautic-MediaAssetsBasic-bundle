@@ -59,8 +59,8 @@ final class ImageRenditionWriterTest extends TestCase
         $standard = $writer->write($absolute, $relative, RenditionPreset::Standard, false);
         $thumb    = $writer->write($absolute, $relative, RenditionPreset::Thumb, false);
 
-        $this->assertNotNull($standard);
-        $this->assertNotNull($thumb);
+        $this->assertInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $standard);
+        $this->assertInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $thumb);
         $this->assertSame('_renditions/brand/hero_1600.jpg', $standard->relativePath);
         $this->assertSame('_renditions/brand/hero_400.jpg', $thumb->relativePath);
         $this->assertTrue(is_file($standard->absolutePath));
@@ -80,8 +80,8 @@ final class ImageRenditionWriterTest extends TestCase
         $standard = $this->writer()->write($absolute, $relative, RenditionPreset::Standard, false);
         $thumb    = $this->writer()->write($absolute, $relative, RenditionPreset::Thumb, false);
 
-        $this->assertNull($standard);
-        $this->assertNotNull($thumb);
+        $this->assertNotInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $standard);
+        $this->assertInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $thumb);
         $this->assertSame(400, max($thumb->width, $thumb->height));
     }
 
@@ -94,8 +94,8 @@ final class ImageRenditionWriterTest extends TestCase
         $standard = $this->writer()->write($absolute, $relative, RenditionPreset::Standard, true);
         $thumb    = $this->writer()->write($absolute, $relative, RenditionPreset::Thumb, true);
 
-        $this->assertNull($standard);
-        $this->assertNotNull($thumb);
+        $this->assertNotInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $standard);
+        $this->assertInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $thumb);
     }
 
     private function writer(): ImageRenditionWriter
@@ -110,6 +110,10 @@ final class ImageRenditionWriterTest extends TestCase
         return new ImageRenditionWriter(new RenditionPaths($paths), new ImageInspector());
     }
 
+    /**
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
     private function writeJpeg(string $path, int $width, int $height): void
     {
         $image = imagecreatetruecolor($width, $height);
@@ -121,6 +125,10 @@ final class ImageRenditionWriterTest extends TestCase
         imagedestroy($image);
     }
 
+    /**
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
     private function writeGif(string $path, int $width, int $height): void
     {
         $image = imagecreatetruecolor($width, $height);

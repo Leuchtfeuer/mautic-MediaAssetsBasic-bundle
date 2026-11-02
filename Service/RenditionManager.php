@@ -119,7 +119,7 @@ class RenditionManager
 
         try {
             $generated = $this->writer->write($absolute, $file->getRelativePath(), $preset, $animatedGif);
-        } catch (ImageRejectedException|\Throwable $exception) {
+        } catch (\Throwable $exception) {
             return $this->persistFailed($file, $preset, $existing, $exception->getMessage());
         }
 

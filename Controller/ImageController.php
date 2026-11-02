@@ -372,7 +372,13 @@ final class ImageController extends AjaxController
     /**
      * @param array{absolute: string, relative: string} $directory
      *
-     * @return array<string, mixed>
+     * @return array{
+     *     ok: bool,
+     *     name?: string,
+     *     error?: string,
+     *     usedExisting?: bool,
+     *     image?: array{name: string, path: string, url: string, thumbUrl: ?string, width: int, height: int, bytes: int}
+     * }
      */
     private function commitUploadWithDecision(
         UploadedFile $file,
@@ -540,6 +546,9 @@ final class ImageController extends AjaxController
         ];
     }
 
+    /**
+     * @return array{name: string, path: string, url: string, thumbUrl: ?string, width: int, height: int, bytes: int}
+     */
     private function presentIndexed(ListedImage $image, ImageUrls $urls, ImageLibrary $library): array
     {
         $path   = '' !== $image->path ? $image->path : $image->name;

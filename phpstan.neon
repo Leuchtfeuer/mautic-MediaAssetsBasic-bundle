@@ -23,3 +23,33 @@ parameters:
         - MAUTIC_ENV
         - MAUTIC_TABLE_PREFIX
         - MAUTIC_VERSION
+
+    # Pre-existing baseline (MTC-12140 patterns / IntegrationsBundle conventions).
+    ignoreErrors:
+        -
+            identifier: symplify.explicitInterfaceSuffixName
+            path: Contract/HostResolver.php
+        -
+            identifier: symplify.explicitInterfaceSuffixName
+            path: Contract/MediaIndexer.php
+        -
+            identifier: symplify.classNameRespectsParentSuffix
+            path: EventListener/AssetsSubscriber.php
+        -
+            identifier: symplify.forbiddenExtendOfNonAbstractClass
+            path: Integration/Support/ConfigSupport.php
+        -
+            identifier: doctrine.requireQueryBuilderOnRepository
+            path: Repository/MediaAssetFileRepository.php
+        -
+            identifier: symplify.noNullableServiceInConstructor
+            path: Service/UrlImageImporter.php
+        -
+            identifier: doctrine.noGetRepositoryOutsideService
+            path: Tests/Functional/Command/IndexMediaCommandFunctionalTest.php
+        -
+            identifier: doctrine.noGetRepositoryOutsideService
+            path: Tests/Functional/Controller/ImageControllerFunctionalTest.php
+        -
+            identifier: symplify.noConstructorOverride
+            path: Tests/Unit/EventListener/AssetsSubscriberTest.php

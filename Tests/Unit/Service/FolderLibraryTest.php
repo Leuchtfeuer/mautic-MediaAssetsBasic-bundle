@@ -187,7 +187,7 @@ final class FolderLibraryTest extends TestCase
                 $this->folders,
                 $this->files,
                 $this->entityManager,
-                $this->createMock(RenditionManager::class),
+                $this->createStub(RenditionManager::class),
             ),
         );
     }

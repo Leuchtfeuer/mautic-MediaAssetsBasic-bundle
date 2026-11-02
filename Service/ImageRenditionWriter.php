@@ -12,11 +12,11 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 /**
  * Writes a single rendition file from a master image (Imagick preferred, GD fallback).
  */
-final class ImageRenditionWriter
+final readonly class ImageRenditionWriter
 {
     public function __construct(
-        private readonly RenditionPaths $renditionPaths,
-        private readonly ImageInspector $inspector,
+        private RenditionPaths $renditionPaths,
+        private ImageInspector $inspector,
     ) {
     }
 
@@ -123,13 +123,8 @@ final class ImageRenditionWriter
                 $image = $frame;
             }
 
-            if (method_exists($image, 'autoOrient')) {
-                $image->autoOrient();
-            } else {
-                $orientation = $image->getImageOrientation();
-                $this->applyImagickOrientation($image, $orientation);
-                $image->setImageOrientation(\Imagick::ORIENTATION_TOPLEFT);
-            }
+            $image->autoOrient();
+            $image->setImageOrientation(\Imagick::ORIENTATION_TOPLEFT);
 
             if (\Imagick::COLORSPACE_SRGB !== $image->getImageColorspace()) {
                 $image->transformImageColorspace(\Imagick::COLORSPACE_SRGB);
@@ -176,13 +171,7 @@ final class ImageRenditionWriter
 
         try {
             $source = $this->gdApplyExifOrientation($source, $sourceAbsolute, $mime);
-            $width  = imagesx($source);
-            $height = imagesy($source);
-            if (false === $width || false === $height) {
-                throw new ImageRejectedException(Translation::ERROR_TYPE);
-            }
-
-            $target = $this->targetDimensions($width, $height, $preset->longEdge());
+            $target = $this->targetDimensions(imagesx($source), imagesy($source), $preset->longEdge());
             $dest   = imagecreatetruecolor($target['width'], $target['height']);
             if (false === $dest) {
                 throw new ImageRejectedException(Translation::ERROR_TYPE);
@@ -207,8 +196,8 @@ final class ImageRenditionWriter
                     0,
                     $target['width'],
                     $target['height'],
-                    $width,
-                    $height,
+                    imagesx($source),
+                    imagesy($source),
                 );
 
                 $ok = match ($mime) {
@@ -219,7 +208,7 @@ final class ImageRenditionWriter
                     default      => false,
                 };
 
-                if (true !== $ok) {
+                if (!$ok) {
                     throw new ImageRejectedException(Translation::ERROR_TYPE);
                 }
             } finally {
@@ -231,21 +220,32 @@ final class ImageRenditionWriter
     }
 
     /**
-     * @return array{width: int, height: int}
+     * @return array{width: int<1, max>, height: int<1, max>}
      */
     private function targetDimensions(int $width, int $height, int $longEdge): array
     {
         $current = max($width, $height);
         if ($current <= $longEdge || $current < 1) {
-            return ['width' => max(1, $width), 'height' => max(1, $height)];
+            return [
+                'width'  => $this->atLeastOne($width),
+                'height' => $this->atLeastOne($height),
+            ];
         }
 
         $scale = $longEdge / $current;
 
         return [
-            'width'  => max(1, (int) round($width * $scale)),
-            'height' => max(1, (int) round($height * $scale)),
+            'width'  => $this->atLeastOne((int) round($width * $scale)),
+            'height' => $this->atLeastOne((int) round($height * $scale)),
         ];
+    }
+
+    /**
+     * @return int<1, max>
+     */
+    private function atLeastOne(int $value): int
+    {
+        return max(1, $value);
     }
 
     private function imagickFormat(string $mime): string
@@ -257,35 +257,6 @@ final class ImageRenditionWriter
             'image/webp' => 'webp',
             default      => throw new ImageRejectedException(Translation::ERROR_TYPE),
         };
-    }
-
-    private function applyImagickOrientation(\Imagick $image, int $orientation): void
-    {
-        switch ($orientation) {
-            case \Imagick::ORIENTATION_BOTTOMRIGHT:
-                $image->rotateImage('#000', 180);
-                break;
-            case \Imagick::ORIENTATION_RIGHTTOP:
-                $image->rotateImage('#000', 90);
-                break;
-            case \Imagick::ORIENTATION_LEFTBOTTOM:
-                $image->rotateImage('#000', -90);
-                break;
-            case \Imagick::ORIENTATION_TOPRIGHT:
-                $image->flopImage();
-                break;
-            case \Imagick::ORIENTATION_BOTTOMLEFT:
-                $image->flipImage();
-                break;
-            case \Imagick::ORIENTATION_LEFTTOP:
-                $image->flopImage();
-                $image->rotateImage('#000', -90);
-                break;
-            case \Imagick::ORIENTATION_RIGHTBOTTOM:
-                $image->flopImage();
-                $image->rotateImage('#000', 90);
-                break;
-        }
     }
 
     private function gdCreate(string $path, string $mime): \GdImage|false
@@ -306,7 +277,7 @@ final class ImageRenditionWriter
         }
 
         $exif = @exif_read_data($path);
-        if (!is_array($exif) || !isset($exif['Orientation'])) {
+        if (!is_array($exif) || !isset($exif['Orientation']) || !is_numeric($exif['Orientation'])) {
             return $image;
         }
 
