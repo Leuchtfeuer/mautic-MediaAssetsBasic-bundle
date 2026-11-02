@@ -177,9 +177,7 @@ final class RenditionManagerTest extends TestCase
             ->setFailureReason('corrupt');
 
         $this->renditions->method('findOneForFilePreset')->willReturnCallback(
-            static function (MediaAssetFile $f, RenditionPreset $preset) use ($failed): ?MediaRendition {
-                return RenditionPreset::Thumb === $preset ? $failed : null;
-            },
+            static fn (MediaAssetFile $f, RenditionPreset $preset): ?MediaRendition => RenditionPreset::Thumb === $preset ? $failed : null,
         );
         $this->writer->method('isAnimatedGif')->willReturn(false);
         $this->writer->method('write')->willReturnCallback(
@@ -233,9 +231,7 @@ final class RenditionManagerTest extends TestCase
         $helper = $this->createMock(PathsHelper::class);
         $helper->method('getImagePath')->willReturn($this->directory.'/');
         $helper->method('getSystemPath')->willReturnCallback(
-            function (string $name, bool $full = false): string {
-                return 'tmp' === $name ? $this->directory : 'media/images';
-            },
+            fn (string $name, bool $full = false): string => 'tmp' === $name ? $this->directory : 'media/images',
         );
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');

@@ -181,7 +181,7 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
         $this->assertArrayHasKey(RenditionPreset::Thumb->value, $byPreset);
         $this->assertSame(1600, max($byPreset[RenditionPreset::Standard->value]->getWidth(), $byPreset[RenditionPreset::Standard->value]->getHeight()));
         $this->assertSame(400, max($byPreset[RenditionPreset::Thumb->value]->getWidth(), $byPreset[RenditionPreset::Thumb->value]->getHeight()));
-        $this->assertNull($this->em->getRepository(MediaAssetFile::class)->findOneBy([
+        $this->assertNotInstanceOf(MediaAssetFile::class, $this->em->getRepository(MediaAssetFile::class)->findOneBy([
             'relativePath' => $byPreset[RenditionPreset::Thumb->value]->getStoragePath(),
         ]));
     }
