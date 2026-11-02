@@ -1113,7 +1113,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   return (
                     <button
                       type="button"
-                      key={image.url}
+                      key={image.path}
                       className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
                       title={image.path}
                       aria-selected={selectedPaths.has(image.path)}
@@ -1143,7 +1143,13 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                       onClick={(event) => selectImage(image, index, event)}
                       onDoubleClick={() => session.select(image.url)}
                     >
-                      <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
+                      <span className="lf-media-assets__preview">
+                        {image.thumbUrl ? (
+                          <img src={image.thumbUrl} alt="" />
+                        ) : (
+                          <span className="lf-media-assets__thumb-placeholder" aria-hidden="true" />
+                        )}
+                      </span>
                       <span className="lf-media-assets__meta">
                         <span className="lf-media-assets__meta-name">{image.name}</span>
                         <span className="lf-media-assets__meta-size">

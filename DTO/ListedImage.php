@@ -12,20 +12,26 @@ final readonly class ListedImage
         public int $height,
         public int $bytes,
         public string $path = '',
+        public ?string $thumbPath = null,
+        public ?string $insertPath = null,
     ) {
     }
 
     /**
-     * @return array{name: string, path: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, width: int, height: int, bytes: int, thumbPath: ?string, insertPath: string}
      */
     public function toArray(): array
     {
+        $path = '' !== $this->path ? $this->path : $this->name;
+
         return [
-            'name'   => $this->name,
-            'path'   => '' !== $this->path ? $this->path : $this->name,
-            'width'  => $this->width,
-            'height' => $this->height,
-            'bytes'  => $this->bytes,
+            'name'       => $this->name,
+            'path'       => $path,
+            'width'      => $this->width,
+            'height'     => $this->height,
+            'bytes'      => $this->bytes,
+            'thumbPath'  => $this->thumbPath,
+            'insertPath' => $this->insertPath ?? $path,
         ];
     }
 }

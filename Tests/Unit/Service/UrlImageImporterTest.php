@@ -56,7 +56,7 @@ final class UrlImageImporterTest extends TestCase
 
     private function importer(MockHandler $handler): UrlImageImporter
     {
-        $guard = new PublicHostGuard(new class() implements HostResolver {
+        $guard = new PublicHostGuard(new class implements HostResolver {
             public function resolve(string $host): array
             {
                 return ['203.0.113.10'];

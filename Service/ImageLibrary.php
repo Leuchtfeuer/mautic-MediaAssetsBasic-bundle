@@ -6,12 +6,17 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaRendition;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionPreset;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaRenditionRepository;
 
 final readonly class ImageLibrary
 {
-    public function __construct(private MediaAssetFileRepository $files)
-    {
+    public function __construct(
+        private MediaAssetFileRepository $files,
+        private MediaRenditionRepository $renditions,
+    ) {
     }
 
     /**
@@ -42,18 +47,50 @@ final readonly class ImageLibrary
             $listed = $this->files->listInFolder($folderRelative, $page, $limit, $allowSvg);
         }
 
+        $ids = array_values(array_filter(array_map(
+            static fn (MediaAssetFile $file): ?int => $file->getId(),
+            $listed['images'],
+        )));
+        $ready = $this->renditions->mapReadyByFileIds($ids);
+
         return [
             'images' => array_map(
-                static fn (MediaAssetFile $file): ListedImage => new ListedImage(
-                    $file->getFilename(),
-                    $file->getWidth(),
-                    $file->getHeight(),
-                    $file->getBytes(),
-                    $file->getRelativePath(),
-                ),
+                fn (MediaAssetFile $file): ListedImage => $this->toListedImage($file, $ready[$file->getId()] ?? []),
                 $listed['images'],
             ),
             'total' => $listed['total'],
         ];
+    }
+
+    public function findListed(string $relativePath): ?ListedImage
+    {
+        $file = $this->files->findOneByRelativePath($relativePath);
+
+        return $file instanceof MediaAssetFile ? $this->toListedImage($file) : null;
+    }
+
+    /**
+     * @param array<string, MediaRendition> $readyByPreset
+     */
+    public function toListedImage(MediaAssetFile $file, array $readyByPreset = []): ListedImage
+    {
+        if ([] === $readyByPreset && null !== $file->getId()) {
+            $readyByPreset = $this->renditions->mapReadyByFileIds([$file->getId()])[$file->getId()] ?? [];
+        }
+
+        $path      = $file->getRelativePath();
+        $thumb     = $readyByPreset[RenditionPreset::Thumb->value] ?? null;
+        $standard  = $readyByPreset[RenditionPreset::Standard->value] ?? null;
+        $isSvg     = ImageInspector::SVG_MIME === $file->getMime();
+
+        return new ListedImage(
+            $file->getFilename(),
+            $file->getWidth(),
+            $file->getHeight(),
+            $file->getBytes(),
+            $path,
+            $isSvg ? $path : ($thumb instanceof MediaRendition ? $thumb->getStoragePath() : null),
+            $isSvg ? $path : ($standard instanceof MediaRendition ? $standard->getStoragePath() : $path),
+        );
     }
 }

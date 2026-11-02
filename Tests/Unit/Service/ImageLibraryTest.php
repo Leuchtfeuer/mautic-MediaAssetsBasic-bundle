@@ -6,6 +6,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaRenditionRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -16,9 +17,19 @@ final class ImageLibraryTest extends TestCase
     /** @var MediaAssetFileRepository&MockObject */
     private MockObject $files;
 
+    /** @var MediaRenditionRepository&MockObject */
+    private MockObject $renditions;
+
     protected function setUp(): void
     {
-        $this->files = $this->createMock(MediaAssetFileRepository::class);
+        $this->files      = $this->createMock(MediaAssetFileRepository::class);
+        $this->renditions = $this->createMock(MediaRenditionRepository::class);
+        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
+    }
+
+    private function library(): ImageLibrary
+    {
+        return new ImageLibrary($this->files, $this->renditions);
     }
 
     public function testListsImagesFromTheRepository(): void
@@ -31,7 +42,7 @@ final class ImageLibraryTest extends TestCase
             ->with('', 1, 24, false)
             ->willReturn(['images' => [$newer, $older], 'total' => 2]);
 
-        $page = (new ImageLibrary($this->files))->listImages('', 1, 24);
+        $page = $this->library()->listImages('', 1, 24);
 
         $this->assertSame(2, $page['total']);
         $this->assertSame(['newer.png', 'older.png'], array_map(static fn (\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage $image): string => $image->name, $page['images']));
@@ -44,7 +55,7 @@ final class ImageLibraryTest extends TestCase
             ->with('Brand', 2, 10, true)
             ->willReturn(['images' => [], 'total' => 0]);
 
-        (new ImageLibrary($this->files))->listImages('Brand', 2, 10, true);
+        $this->library()->listImages('Brand', 2, 10, true);
     }
 
     public function testShortQueryUsesFolderListing(): void
@@ -55,7 +66,7 @@ final class ImageLibraryTest extends TestCase
             ->willReturn(['images' => [], 'total' => 0]);
         $this->files->expects($this->never())->method('searchInTree');
 
-        (new ImageLibrary($this->files))->listImages('Campaign 2026', 1, 24, false, 'a');
+        $this->library()->listImages('Campaign 2026', 1, 24, false, 'a');
     }
 
     public function testActiveQuerySearchesFolderTree(): void
@@ -66,7 +77,7 @@ final class ImageLibraryTest extends TestCase
             ->willReturn(['images' => [], 'total' => 0]);
         $this->files->expects($this->never())->method('listInFolder');
 
-        (new ImageLibrary($this->files))->listImages('Campaign 2026', 1, 24, false, 'Bitmotion');
+        $this->library()->listImages('Campaign 2026', 1, 24, false, 'Bitmotion');
     }
 
     public function testEverywhereSearchUsesRootTreeWithSelectedFolderBoost(): void
@@ -76,7 +87,7 @@ final class ImageLibraryTest extends TestCase
             ->with('', 'Bitmotion', 'Campaign 2026', 1, 24, false)
             ->willReturn(['images' => [], 'total' => 0]);
 
-        (new ImageLibrary($this->files))->listImages('Campaign 2026', 1, 24, false, 'Bitmotion', true);
+        $this->library()->listImages('Campaign 2026', 1, 24, false, 'Bitmotion', true);
     }
 
     public function testWhitespaceOnlyQueryUsesFolderListing(): void
@@ -87,7 +98,7 @@ final class ImageLibraryTest extends TestCase
             ->willReturn(['images' => [], 'total' => 0]);
         $this->files->expects($this->never())->method('searchInTree');
 
-        (new ImageLibrary($this->files))->listImages('', 1, 24, false, "  \t ");
+        $this->library()->listImages('', 1, 24, false, "  \t ");
     }
 
     public function testSearchMapsRepositoryFilesToListedImages(): void
@@ -97,7 +108,7 @@ final class ImageLibraryTest extends TestCase
             ->method('searchInTree')
             ->willReturn(['images' => [$match], 'total' => 1]);
 
-        $page = (new ImageLibrary($this->files))->listImages('Brand', 1, 24, false, 'bit');
+        $page = $this->library()->listImages('Brand', 1, 24, false, 'bit');
 
         $this->assertSame(1, $page['total']);
         $this->assertCount(1, $page['images']);

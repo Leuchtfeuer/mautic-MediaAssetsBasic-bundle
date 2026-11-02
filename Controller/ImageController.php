@@ -13,6 +13,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\ConflictType;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\UploadDecision;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\RenditionBusyException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\Config;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageLibrary;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
@@ -132,6 +133,7 @@ final class ImageController extends AjaxController
         LandingPagePickerContext $pickerContext,
         MediaIndexer $index,
         UploadConflictDetector $conflicts,
+        ImageLibrary $library,
     ): JsonResponse {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -196,7 +198,10 @@ final class ImageController extends AjaxController
                     $conflicts,
                     $index,
                     $urls,
+                    $library,
                 );
+            } catch (RenditionBusyException $exception) {
+                return $this->renditionBusy($exception);
             } catch (ImageRejectedException $exception) {
                 $results[] = ['ok' => false, 'name' => $name, 'error' => $this->rejected($exception)];
             }
@@ -216,6 +221,7 @@ final class ImageController extends AjaxController
         MediaIndexer $index,
         UploadConflictDetector $conflicts,
         PathsHelper $pathsHelper,
+        ImageLibrary $library,
     ): JsonResponse {
         if (!$config->isPublished()) {
             return $this->unavailable();
@@ -266,7 +272,10 @@ final class ImageController extends AjaxController
                 $storage,
                 $index,
                 $urls,
+                $library,
             );
+        } catch (RenditionBusyException $exception) {
+            return $this->renditionBusy($exception);
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
@@ -274,8 +283,16 @@ final class ImageController extends AjaxController
         return $this->sendJsonResponse(['image' => $image]);
     }
 
-    public function moveAction(Request $request, Config $config, ImageStorage $storage, MediaPath $paths, ImageUrls $urls, LandingPagePickerContext $pickerContext, MediaIndexer $index): JsonResponse
-    {
+    public function moveAction(
+        Request $request,
+        Config $config,
+        ImageStorage $storage,
+        MediaPath $paths,
+        ImageUrls $urls,
+        LandingPagePickerContext $pickerContext,
+        MediaIndexer $index,
+        ImageLibrary $library,
+    ): JsonResponse {
         if (!$config->isPublished()) {
             return $this->unavailable();
         }
@@ -292,11 +309,14 @@ final class ImageController extends AjaxController
             $trimmedPath = trim($path);
             $image       = $storage->move($paths, $trimmedPath, $folderPath, $pickerContext->allowSvg($request));
             $index->registerMoved($trimmedPath, $image, $pickerContext->allowSvg($request));
+            $listed = $library->findListed('' !== $image->path ? $image->path : $image->name) ?? $image;
+        } catch (RenditionBusyException $exception) {
+            return $this->renditionBusy($exception);
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
 
-        return $this->sendJsonResponse(['image' => $this->present($image, $urls)]);
+        return $this->sendJsonResponse(['image' => $this->present($listed, $urls)]);
     }
 
     /**
@@ -314,6 +334,7 @@ final class ImageController extends AjaxController
         UploadConflictDetector $conflicts,
         MediaIndexer $index,
         ImageUrls $urls,
+        ImageLibrary $library,
     ): array {
         $intended = $storage->intendedUploadedName($file, $allowSvg);
         $conflict = $conflicts->detect($file->getPathname(), $intended, $directory['relative']);
@@ -338,13 +359,14 @@ final class ImageController extends AjaxController
                 $storage,
                 $index,
                 $urls,
+                $library,
             );
         }
 
         $image = $storage->storeUploaded($directory['absolute'], $file, $directory['relative'], $allowSvg);
         $index->registerUploaded($image, $allowSvg);
 
-        return ['ok' => true, 'image' => $this->present($image, $urls)];
+        return ['ok' => true, 'image' => $this->presentIndexed($image, $urls, $library)];
     }
 
     /**
@@ -363,20 +385,21 @@ final class ImageController extends AjaxController
         ImageStorage $storage,
         MediaIndexer $index,
         ImageUrls $urls,
+        ImageLibrary $library,
     ): array {
         if (ConflictType::ChecksumDuplicate === $conflict->type) {
             if (UploadDecision::UseExisting === $decision) {
                 return [
                     'ok'            => true,
                     'usedExisting'  => true,
-                    'image'         => $this->presentFile($conflict->existing, $urls),
+                    'image'         => $this->presentFile($conflict->existing, $urls, $library),
                 ];
             }
             if (UploadDecision::KeepBoth === $decision) {
                 $image = $storage->storeUploaded($directory['absolute'], $file, $directory['relative'], $allowSvg);
                 $index->registerUploaded($image, $allowSvg);
 
-                return ['ok' => true, 'image' => $this->present($image, $urls)];
+                return ['ok' => true, 'image' => $this->presentIndexed($image, $urls, $library)];
             }
 
             return [
@@ -397,13 +420,13 @@ final class ImageController extends AjaxController
             );
             $index->registerUploaded($image, $allowSvg);
 
-            return ['ok' => true, 'image' => $this->present($image, $urls)];
+            return ['ok' => true, 'image' => $this->presentIndexed($image, $urls, $library)];
         }
         if (UploadDecision::KeepBoth === $decision) {
             $image = $storage->storeUploaded($directory['absolute'], $file, $directory['relative'], $allowSvg);
             $index->registerUploaded($image, $allowSvg);
 
-            return ['ok' => true, 'image' => $this->present($image, $urls)];
+            return ['ok' => true, 'image' => $this->presentIndexed($image, $urls, $library)];
         }
 
         return [
@@ -416,7 +439,7 @@ final class ImageController extends AjaxController
     /**
      * @param array{absolute: string, relative: string} $directory
      *
-     * @return array{name: string, path: string, url: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, url: string, thumbUrl: ?string, width: int, height: int, bytes: int}
      */
     private function commitImport(
         string $contents,
@@ -429,23 +452,24 @@ final class ImageController extends AjaxController
         ImageStorage $storage,
         MediaIndexer $index,
         ImageUrls $urls,
+        ImageLibrary $library,
     ): array {
         if (!$conflict instanceof UploadConflict) {
             $image = $storage->store($directory['absolute'], $originalName, $contents, $directory['relative'], $allowSvg);
             $index->registerUploaded($image, $allowSvg);
 
-            return $this->present($image, $urls);
+            return $this->presentIndexed($image, $urls, $library);
         }
 
         if (ConflictType::ChecksumDuplicate === $conflict->type) {
             if (UploadDecision::UseExisting === $decision) {
-                return $this->presentFile($conflict->existing, $urls);
+                return $this->presentFile($conflict->existing, $urls, $library);
             }
             if (UploadDecision::KeepBoth === $decision) {
                 $image = $storage->store($directory['absolute'], $originalName, $contents, $directory['relative'], $allowSvg);
                 $index->registerUploaded($image, $allowSvg);
 
-                return $this->present($image, $urls);
+                return $this->presentIndexed($image, $urls, $library);
             }
 
             throw new ImageRejectedException(Translation::ERROR_UPLOAD_DECISION);
@@ -461,13 +485,13 @@ final class ImageController extends AjaxController
             );
             $index->registerUploaded($image, $allowSvg);
 
-            return $this->present($image, $urls);
+            return $this->presentIndexed($image, $urls, $library);
         }
         if (UploadDecision::KeepBoth === $decision) {
             $image = $storage->store($directory['absolute'], $originalName, $contents, $directory['relative'], $allowSvg);
             $index->registerUploaded($image, $allowSvg);
 
-            return $this->present($image, $urls);
+            return $this->presentIndexed($image, $urls, $library);
         }
 
         throw new ImageRejectedException(Translation::ERROR_UPLOAD_DECISION);
@@ -495,30 +519,63 @@ final class ImageController extends AjaxController
     }
 
     /**
-     * @return array{name: string, path: string, url: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, url: string, thumbUrl: ?string, width: int, height: int, bytes: int}
      */
-    private function presentFile(MediaAssetFile $file, ImageUrls $urls): array
+    private function presentFile(MediaAssetFile $file, ImageUrls $urls, ?ImageLibrary $library = null): array
     {
+        if ($library instanceof ImageLibrary) {
+            return $this->present($library->toListedImage($file), $urls);
+        }
+
         $path = $file->getRelativePath();
 
         return [
-            'name'   => $file->getFilename(),
-            'path'   => $path,
-            'url'    => $urls->publicUrl($path),
-            'width'  => $file->getWidth(),
-            'height' => $file->getHeight(),
-            'bytes'  => $file->getBytes(),
+            'name'     => $file->getFilename(),
+            'path'     => $path,
+            'url'      => $urls->publicUrl($path),
+            'thumbUrl' => null,
+            'width'    => $file->getWidth(),
+            'height'   => $file->getHeight(),
+            'bytes'    => $file->getBytes(),
         ];
     }
 
+    private function presentIndexed(ListedImage $image, ImageUrls $urls, ImageLibrary $library): array
+    {
+        $path   = '' !== $image->path ? $image->path : $image->name;
+        $listed = $library->findListed($path) ?? $image;
+
+        return $this->present($listed, $urls);
+    }
+
     /**
-     * @return array{name: string, path: string, url: string, width: int, height: int, bytes: int}
+     * @return array{name: string, path: string, url: string, thumbUrl: ?string, width: int, height: int, bytes: int}
      */
     private function present(ListedImage $image, ImageUrls $urls): array
     {
-        $path = '' !== $image->path ? $image->path : $image->name;
+        $path       = '' !== $image->path ? $image->path : $image->name;
+        $insertPath = $image->insertPath ?? $path;
 
-        return $image->toArray() + ['url' => $urls->publicUrl($path)];
+        return [
+            'name'     => $image->name,
+            'path'     => $path,
+            'url'      => $urls->publicUrl($insertPath),
+            'thumbUrl' => null === $image->thumbPath ? null : $urls->publicUrl($image->thumbPath),
+            'width'    => $image->width,
+            'height'   => $image->height,
+            'bytes'    => $image->bytes,
+        ];
+    }
+
+    private function renditionBusy(RenditionBusyException $exception): JsonResponse
+    {
+        $response = $this->sendJsonResponse(
+            ['error' => $exception->getMessage()],
+            Response::HTTP_SERVICE_UNAVAILABLE,
+        );
+        $response->headers->set('Retry-After', (string) $exception->getRetryAfterSeconds());
+
+        return $response;
     }
 
     private function queryPath(Request $request): ?string

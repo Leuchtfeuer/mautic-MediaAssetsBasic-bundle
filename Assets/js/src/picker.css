@@ -676,6 +676,20 @@
   object-fit: contain;
 }
 
+.lf-media-assets__thumb-placeholder {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    -45deg,
+    #c6c6c6,
+    #c6c6c6 6px,
+    #e0e0e0 6px,
+    #e0e0e0 12px
+  );
+}
+
 .lf-media-assets__meta {
   display: block;
   padding: 12px;

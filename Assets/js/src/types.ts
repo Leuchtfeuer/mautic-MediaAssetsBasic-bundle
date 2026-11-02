@@ -2,6 +2,7 @@ export interface MediaImage {
   name: string;
   path: string;
   url: string;
+  thumbUrl?: string | null;
   width: number;
   height: number;
   bytes: number;
