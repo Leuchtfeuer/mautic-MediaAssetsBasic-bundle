@@ -8,9 +8,11 @@ use Doctrine\ORM\EntityManagerInterface;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Contract\MediaIndexer;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\MediaIndexRunSummary;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\RenditionEnsureResult;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\ImageRejectedException;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\RenditionBusyException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFolderRepository;
 
@@ -30,16 +32,19 @@ final class MediaIndex implements MediaIndexer
     /** @var array<string, true> */
     private array $seenChecksums = [];
 
+    private bool $skipRenditions = false;
+
     public function __construct(
         private readonly MediaPath $paths,
         private readonly ImageInspector $inspector,
         private readonly MediaAssetFolderRepository $folders,
         private readonly MediaAssetFileRepository $files,
         private readonly EntityManagerInterface $entityManager,
+        private readonly RenditionManager $renditions,
     ) {
     }
 
-    public function registerUploaded(ListedImage $image, bool $allowSvg): void
+    public function registerUploaded(ListedImage $image, bool $allowSvg, bool $generateRenditions = true): void
     {
         $relative = '' !== $image->path ? $image->path : $image->name;
         $absolute = $this->paths->root().'/'.$relative;
@@ -47,14 +52,22 @@ final class MediaIndex implements MediaIndexer
             return;
         }
 
-        $this->dryRun      = false;
-        $this->folderCache = [];
+        $this->dryRun          = false;
+        $this->skipRenditions  = !$generateRenditions;
+        $this->folderCache     = [];
         $this->indexFileAtPath(
             $absolute,
             $relative,
             $allowSvg || str_ends_with(strtolower($relative), '.svg'),
         );
         $this->entityManager->flush();
+
+        if ($generateRenditions) {
+            $file = $this->files->findOneByRelativePath($relative);
+            if ($file instanceof MediaAssetFile) {
+                $this->renditions->ensureForFile($file, false, true);
+            }
+        }
     }
 
     public function registerMoved(string $oldRelative, ListedImage $image, bool $allowSvg): void
@@ -100,6 +113,11 @@ final class MediaIndex implements MediaIndexer
             new MediaIndexRunSummary(),
         );
         $this->entityManager->flush();
+
+        $file = $this->files->findOneByRelativePath($newRelative);
+        if ($file instanceof MediaAssetFile) {
+            $this->renditions->rebuildForFile($file, true);
+        }
     }
 
     public function registerFolder(string $relativePath, string $name): void
@@ -115,9 +133,11 @@ final class MediaIndex implements MediaIndexer
         $this->entityManager->flush();
     }
 
-    public function run(bool $reindexAll, bool $dryRun): MediaIndexRunSummary
+    public function run(bool $reindexAll, bool $dryRun, bool $skipRenditions = false): MediaIndexRunSummary
     {
+        $started               = microtime(true);
         $this->dryRun          = $dryRun;
+        $this->skipRenditions  = $skipRenditions;
         $this->seenFilePaths   = [];
         $this->seenFolderPaths = [];
         $this->folderCache     = [];
@@ -126,14 +146,14 @@ final class MediaIndex implements MediaIndexer
 
         $root = $this->paths->root();
         if (!is_dir($root)) {
-            return $summary;
+            return $summary->withElapsedSeconds(microtime(true) - $started);
         }
 
         $summary = $this->walkDirectory($root, '', $reindexAll, $summary);
         $summary = $this->reconcileMissingFromDisk($summary);
         $this->flushIfNeeded(true);
 
-        return $summary;
+        return $summary->withElapsedSeconds(microtime(true) - $started);
     }
 
     private function walkDirectory(string $absolute, string $relative, bool $reindexAll, MediaIndexRunSummary $summary): MediaIndexRunSummary
@@ -201,10 +221,10 @@ final class MediaIndex implements MediaIndexer
             || '' === $existing->getChecksum();
         if (!$reindexAll && !$needsHashBackfill && $existing->isActive()
             && $existing->getFileMtime() === $mtime && $existing->getBytes() === $bytes) {
-            return $summary;
+            return $this->ensureRenditionsForRelative($relative, $summary);
         }
 
-        return $this->persistFile(
+        $summary = $this->persistFile(
             $absolute,
             $relative,
             MediaIndexPath::filename($relative),
@@ -216,6 +236,8 @@ final class MediaIndex implements MediaIndexer
             $existing,
             $summary,
         );
+
+        return $this->ensureRenditionsForRelative($relative, $summary);
     }
 
     private function indexFileAtPath(string $absolute, string $relative, bool $allowSvg): void
@@ -458,6 +480,28 @@ final class MediaIndex implements MediaIndexer
         }
 
         return $summary;
+    }
+
+    private function ensureRenditionsForRelative(string $relative, MediaIndexRunSummary $summary): MediaIndexRunSummary
+    {
+        if ($this->skipRenditions) {
+            return $summary;
+        }
+
+        $this->flushIfNeeded(true);
+        $file = $this->files->findOneByRelativePath($relative);
+        if (!$file instanceof MediaAssetFile) {
+            return $summary;
+        }
+
+        try {
+            return $summary->withRenditionResult(
+                $this->renditions->ensureForFile($file, $this->dryRun, false),
+            );
+        } catch (RenditionBusyException) {
+            // CLI waits on the lock; a timeout mid-file is counted as failure for this file.
+            return $summary->withRenditionResult(new RenditionEnsureResult(failed: 1));
+        }
     }
 
     private function flushIfNeeded(bool $force = false): void

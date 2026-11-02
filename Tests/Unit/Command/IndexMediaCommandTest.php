@@ -32,7 +32,7 @@ final class IndexMediaCommandTest extends TestCase
     {
         $this->index->expects($this->once())
             ->method('run')
-            ->with(false, false)
+            ->with(false, false, false)
             ->willReturn(new MediaIndexRunSummary(filesIndexed: 2, foldersIndexed: 1));
 
         $status = $this->tester->execute([]);
@@ -41,6 +41,7 @@ final class IndexMediaCommandTest extends TestCase
         $display = $this->tester->getDisplay();
         $this->assertStringContainsString('Files indexed (new)', $display);
         $this->assertStringContainsString('of which duplicate checksum', $display);
+        $this->assertStringContainsString('Renditions generated', $display);
         $this->assertStringContainsString('Media index run finished.', $display);
         $this->assertStringNotContainsString('Dry run', $display);
     }
@@ -49,7 +50,7 @@ final class IndexMediaCommandTest extends TestCase
     {
         $this->index->expects($this->once())
             ->method('run')
-            ->with(true, true)
+            ->with(true, true, false)
             ->willReturn(new MediaIndexRunSummary());
 
         $status = $this->tester->execute([
@@ -59,5 +60,20 @@ final class IndexMediaCommandTest extends TestCase
 
         $this->assertSame(0, $status);
         $this->assertStringContainsString('Dry run', $this->tester->getDisplay());
+    }
+
+    public function testSkipRenditionsFlagIsForwarded(): void
+    {
+        $this->index->expects($this->once())
+            ->method('run')
+            ->with(false, false, true)
+            ->willReturn(new MediaIndexRunSummary());
+
+        $status = $this->tester->execute([
+            '--skip-renditions' => true,
+        ]);
+
+        $this->assertSame(0, $status);
+        $this->assertStringContainsString('Skipping rendition generation.', $this->tester->getDisplay());
     }
 }

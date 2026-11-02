@@ -130,7 +130,9 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 
 **File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `checksum` (SHA-256, nullable until indexed), `date_added` (nullable until indexed), `missing_since` (nullable).
 
-**Later:** UUID, usage references, path aliases, renditions root outside the browsable tree, versioning.
+**Renditions:** derived files live under `_renditions/` (mirroring the original folder tree), tracked in `lf_media_renditions`. The indexer skips that root. Presets are hard-coded: **standard** long edge 1600 @ quality 82, **thumb** long edge 400 @ quality 75.
+
+**Later:** UUID, usage references, path aliases, configurable presets, versioning.
 
 ### Picker / API
 
@@ -159,7 +161,9 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 
 - Event-based indexing, on-demand re-scan from the UI.
 - Versioning / UUID / “uploaded by” metadata.
-- Renditions, usage, path aliases.
+- Configurable presets / preset manager UI, usage tracking, path aliases.
+- On-demand regeneration when a rendition file is missing on disk.
+- Queued generation, CDN, signed URLs, format conversion (WebP/AVIF out).
 
 ### Performance
 
@@ -188,6 +192,7 @@ bin/console mautic:plugins:reload
 | `bin/console leuchtfeuer:media:index-media --dry-run` | Same logic as the mode you combine it with (default or `--all`), but **no database writes** — prints a summary of what would change. |
 | `bin/console leuchtfeuer:media:index-media --all` | Full reindex: re-inspect every file on disk, align the folder tree, and apply or clear soft delete according to disk state. |
 | `bin/console leuchtfeuer:media:index-media --all --dry-run` | Preview a full `--all` run without writing to the database. |
+| `bin/console leuchtfeuer:media:index-media --skip-renditions` | Index/reconcile without writing standard/thumb files; a later run without the flag fills them in. |
 
 See [Console index command](#console-index-command) above for the full reconcile rules.
 

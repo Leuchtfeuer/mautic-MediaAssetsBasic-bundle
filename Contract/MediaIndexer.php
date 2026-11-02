@@ -9,11 +9,11 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\MediaIndexRunSummary;
 
 interface MediaIndexer
 {
-    public function registerUploaded(ListedImage $image, bool $allowSvg): void;
+    public function registerUploaded(ListedImage $image, bool $allowSvg, bool $generateRenditions = true): void;
 
     public function registerMoved(string $oldRelative, ListedImage $image, bool $allowSvg): void;
 
     public function registerFolder(string $relativePath, string $name): void;
 
-    public function run(bool $reindexAll, bool $dryRun): MediaIndexRunSummary;
+    public function run(bool $reindexAll, bool $dryRun, bool $skipRenditions = false): MediaIndexRunSummary;
 }

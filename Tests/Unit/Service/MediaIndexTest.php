@@ -7,6 +7,7 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 use Doctrine\ORM\EntityManagerInterface;
 use Mautic\CoreBundle\Helper\CoreParametersHelper;
 use Mautic\CoreBundle\Helper\PathsHelper;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\RenditionEnsureResult;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
@@ -16,6 +17,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaIndex;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\RenditionManager;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -158,7 +160,7 @@ final class MediaIndexTest extends TestCase
         mkdir($this->directory.'/test/ttt', 0775, true);
         (new ImageStorage(new ImageInspector()))->store($this->directory.'/test/ttt', 'nested.png', $this->png(), 'test/ttt');
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $this->entityManager->expects($this->atLeastOnce())->method('flush');
 
         $summary = $this->index()->run(false, false);
 
@@ -207,7 +209,7 @@ final class MediaIndexTest extends TestCase
             ->setFileMtime(1);
         $this->fileStore['gone.png'] = $missing;
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $this->entityManager->expects($this->atLeastOnce())->method('flush');
 
         $summary = $this->index()->run(false, false);
 
@@ -308,12 +310,17 @@ final class MediaIndexTest extends TestCase
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');
 
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
+        $renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
+
         return new MediaIndex(
             new MediaPath(new ImageUrls($helper, $parameters)),
             new ImageInspector(),
             $this->folders,
             $this->files,
             $this->entityManager,
+            $renditions,
         );
     }
 

@@ -17,6 +17,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaIndex;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\RenditionManager;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -180,7 +181,14 @@ final class FolderLibraryTest extends TestCase
             $paths,
             $this->folders,
             $this->files,
-            new MediaIndex($paths, new ImageInspector(), $this->folders, $this->files, $this->entityManager),
+            new MediaIndex(
+                $paths,
+                new ImageInspector(),
+                $this->folders,
+                $this->files,
+                $this->entityManager,
+                $this->createMock(RenditionManager::class),
+            ),
         );
     }
 
