@@ -971,7 +971,9 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
         $this->assertIsArray($upload);
-        $first = $upload['files'][0] ?? null;
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
         $this->assertIsArray($first);
         $imagePayload = $first['image'] ?? null;
         $this->assertIsArray($imagePayload);

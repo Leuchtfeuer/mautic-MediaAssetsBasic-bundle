@@ -43,7 +43,7 @@ final class MediaIndexTest extends TestCase
     /** @var list<object> */
     private array $persisted = [];
 
-    /** @var RenditionManager&MockObject|null */
+    /** @var (RenditionManager&MockObject)|null */
     private ?MockObject $renditions = null;
 
     protected function setUp(): void
@@ -357,10 +357,10 @@ final class MediaIndexTest extends TestCase
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');
 
-        $renditions = $this->renditions ?? $this->createMock(RenditionManager::class);
         if (null === $this->renditions) {
-            $renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
-            $renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
+            $this->renditions = $this->createMock(RenditionManager::class);
+            $this->renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
+            $this->renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
         }
 
         return new MediaIndex(
@@ -369,7 +369,7 @@ final class MediaIndexTest extends TestCase
             $this->folders,
             $this->files,
             $this->entityManager,
-            $renditions,
+            $this->renditions,
         );
     }
 
