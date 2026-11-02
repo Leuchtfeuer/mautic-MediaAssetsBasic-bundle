@@ -65,7 +65,8 @@ final class MediaIndex implements MediaIndexer
         if ($generateRenditions) {
             $file = $this->files->findOneByRelativePath($relative);
             if ($file instanceof MediaAssetFile) {
-                $this->renditions->ensureForFile($file, false, true);
+                // Rebuild so replace/import at the same path cannot keep stale ready thumbs.
+                $this->renditions->rebuildForFile($file, true);
             }
         }
     }
@@ -115,8 +116,14 @@ final class MediaIndex implements MediaIndexer
         $this->entityManager->flush();
 
         $file = $this->files->findOneByRelativePath($newRelative);
-        if ($file instanceof MediaAssetFile) {
+        if (!$file instanceof MediaAssetFile) {
+            return;
+        }
+
+        try {
             $this->renditions->rebuildForFile($file, true);
+        } catch (RenditionBusyException) {
+            // Filesystem move + index path update already committed; fill derived files later.
         }
     }
 
@@ -221,7 +228,7 @@ final class MediaIndex implements MediaIndexer
             || '' === $existing->getChecksum();
         if (!$reindexAll && !$needsHashBackfill && $existing->isActive()
             && $existing->getFileMtime() === $mtime && $existing->getBytes() === $bytes) {
-            return $this->ensureRenditionsForRelative($relative, $summary);
+            return $this->ensureRenditionsForRelative($relative, $summary, false);
         }
 
         $summary = $this->persistFile(
@@ -237,7 +244,8 @@ final class MediaIndex implements MediaIndexer
             $summary,
         );
 
-        return $this->ensureRenditionsForRelative($relative, $summary);
+        // Master bytes/mtime changed (or full reindex): drop stale derived files and recreate.
+        return $this->ensureRenditionsForRelative($relative, $summary, true);
     }
 
     private function indexFileAtPath(string $absolute, string $relative, bool $allowSvg): void
@@ -482,8 +490,11 @@ final class MediaIndex implements MediaIndexer
         return $summary;
     }
 
-    private function ensureRenditionsForRelative(string $relative, MediaIndexRunSummary $summary): MediaIndexRunSummary
-    {
+    private function ensureRenditionsForRelative(
+        string $relative,
+        MediaIndexRunSummary $summary,
+        bool $forceRebuild,
+    ): MediaIndexRunSummary {
         if ($this->skipRenditions) {
             return $summary;
         }
@@ -495,9 +506,13 @@ final class MediaIndex implements MediaIndexer
         }
 
         try {
-            return $summary->withRenditionResult(
-                $this->renditions->ensureForFile($file, $this->dryRun, false),
-            );
+            if ($forceRebuild && !$this->dryRun) {
+                $result = $this->renditions->rebuildForFile($file, false);
+            } else {
+                $result = $this->renditions->ensureForFile($file, $this->dryRun, false);
+            }
+
+            return $summary->withRenditionResult($result);
         } catch (RenditionBusyException) {
             // CLI waits on the lock; a timeout mid-file is counted as failure for this file.
             return $summary->withRenditionResult(new RenditionEnsureResult(failed: 1));

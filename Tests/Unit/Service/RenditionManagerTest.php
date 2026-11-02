@@ -163,6 +163,45 @@ final class RenditionManagerTest extends TestCase
         $this->assertSame(0, $result->generated);
     }
 
+    public function testRebuildRemovesReadyRowsAndRegenerates(): void
+    {
+        $relative = 'hero.png';
+        file_put_contents($this->directory.'/'.$relative, $this->png());
+        $file = $this->file($relative, 'image/png');
+
+        mkdir($this->directory.'/_renditions', 0775, true);
+        $stale = (new MediaRendition())
+            ->setFile($file)
+            ->setPreset(RenditionPreset::Thumb)
+            ->setStoragePath('_renditions/hero_400.png')
+            ->setState(RenditionState::Ready);
+        file_put_contents($this->directory.'/_renditions/hero_400.png', 'stale');
+
+        $this->renditions->method('findForFile')->willReturn([$stale]);
+        $this->renditions->method('findOneForFilePreset')->willReturn(null);
+        $this->writer->method('isAnimatedGif')->willReturn(false);
+        $this->writer->expects($this->exactly(2))->method('write')->willReturnCallback(
+            function (string $absolute, string $sourceRelative, RenditionPreset $preset): GeneratedRendition {
+                $path = '_renditions/hero_'.$preset->longEdge().'.png';
+
+                return new GeneratedRendition(
+                    $this->directory.'/'.$path,
+                    $path,
+                    'png',
+                    $preset->longEdge(),
+                    100,
+                    50,
+                );
+            },
+        );
+        $this->entityManager->expects($this->atLeastOnce())->method('remove')->with($stale);
+
+        $result = $this->manager()->rebuildForFile($file);
+
+        $this->assertSame(2, $result->generated);
+        $this->assertFileDoesNotExist($this->directory.'/_renditions/hero_400.png');
+    }
+
     public function testRetriesFailedRowsOnNextEnsure(): void
     {
         $relative = 'hero.png';

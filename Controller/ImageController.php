@@ -310,8 +310,6 @@ final class ImageController extends AjaxController
             $image       = $storage->move($paths, $trimmedPath, $folderPath, $pickerContext->allowSvg($request));
             $index->registerMoved($trimmedPath, $image, $pickerContext->allowSvg($request));
             $listed = $library->findListed('' !== $image->path ? $image->path : $image->name) ?? $image;
-        } catch (RenditionBusyException $exception) {
-            return $this->renditionBusy($exception);
         } catch (ImageRejectedException $exception) {
             return $this->sendJsonResponse(['error' => $this->rejected($exception)], Response::HTTP_BAD_REQUEST);
         }
