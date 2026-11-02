@@ -98,6 +98,28 @@ final class ImageRenditionWriterTest extends TestCase
         $this->assertInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $thumb);
     }
 
+    public function testSkipsSvgEntirely(): void
+    {
+        $relative = 'icon.svg';
+        $absolute = $this->directory.'/'.$relative;
+        file_put_contents($absolute, '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>');
+
+        $standard = $this->writer()->write($absolute, $relative, RenditionPreset::Standard, false);
+        $thumb    = $this->writer()->write($absolute, $relative, RenditionPreset::Thumb, false);
+
+        $this->assertNotInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $standard);
+        $this->assertNotInstanceOf(\MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\GeneratedRendition::class, $thumb);
+    }
+
+    public function testIsAnimatedGifReturnsFalseForSingleFrameGif(): void
+    {
+        $absolute = $this->directory.'/still.gif';
+        $this->writeGif($absolute, 20, 20);
+
+        $this->assertFalse($this->writer()->isAnimatedGif($absolute, 'image/gif'));
+        $this->assertFalse($this->writer()->isAnimatedGif($absolute, 'image/jpeg'));
+    }
+
     private function writer(): ImageRenditionWriter
     {
         $helper = $this->createMock(PathsHelper::class);

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaRendition;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionPreset;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionState;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaRenditionRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
@@ -24,7 +27,6 @@ final class ImageLibraryTest extends TestCase
     {
         $this->files      = $this->createMock(MediaAssetFileRepository::class);
         $this->renditions = $this->createMock(MediaRenditionRepository::class);
-        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
     }
 
     private function library(): ImageLibrary
@@ -41,6 +43,7 @@ final class ImageLibraryTest extends TestCase
             ->method('listInFolder')
             ->with('', 1, 24, false)
             ->willReturn(['images' => [$newer, $older], 'total' => 2]);
+        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
 
         $page = $this->library()->listImages('', 1, 24);
 
@@ -107,6 +110,7 @@ final class ImageLibraryTest extends TestCase
         $this->files->expects($this->once())
             ->method('searchInTree')
             ->willReturn(['images' => [$match], 'total' => 1]);
+        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
 
         $page = $this->library()->listImages('Brand', 1, 24, false, 'bit');
 
@@ -114,6 +118,59 @@ final class ImageLibraryTest extends TestCase
         $this->assertCount(1, $page['images']);
         $this->assertSame('bitmotion.png', $page['images'][0]->name);
         $this->assertSame('Brand/bitmotion.png', $page['images'][0]->path);
+    }
+
+    public function testListedImageUsesThumbAndStandardPathsWhenReady(): void
+    {
+        $file = $this->file('hero.png', 'Brand/hero.png', 2000, 1000, 5000, 1);
+        $file->setId(11);
+        $thumb = (new MediaRendition())
+            ->setPreset(RenditionPreset::Thumb)
+            ->setStoragePath('_renditions/Brand/hero_400.png')
+            ->setState(RenditionState::Ready);
+        $standard = (new MediaRendition())
+            ->setPreset(RenditionPreset::Standard)
+            ->setStoragePath('_renditions/Brand/hero_1600.png')
+            ->setState(RenditionState::Ready);
+
+        $this->files->method('listInFolder')->willReturn(['images' => [$file], 'total' => 1]);
+        $this->renditions->method('mapReadyByFileIds')->with([11])->willReturn([
+            11 => [
+                RenditionPreset::Thumb->value    => $thumb,
+                RenditionPreset::Standard->value => $standard,
+            ],
+        ]);
+
+        $page = $this->library()->listImages('', 1, 24);
+
+        $this->assertSame('_renditions/Brand/hero_400.png', $page['images'][0]->thumbPath);
+        $this->assertSame('_renditions/Brand/hero_1600.png', $page['images'][0]->insertPath);
+    }
+
+    public function testListedImageWithoutThumbUsesPlaceholderAndOriginalInsert(): void
+    {
+        $file = $this->file('hero.png', 'Brand/hero.png', 2000, 1000, 5000, 1);
+        $file->setId(12);
+        $this->files->method('listInFolder')->willReturn(['images' => [$file], 'total' => 1]);
+        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
+
+        $page = $this->library()->listImages('', 1, 24);
+
+        $this->assertNull($page['images'][0]->thumbPath);
+        $this->assertSame('Brand/hero.png', $page['images'][0]->insertPath);
+    }
+
+    public function testSvgListedImageUsesOriginalForThumbAndInsert(): void
+    {
+        $file = $this->file('icon.svg', 'Brand/icon.svg', 100, 100, 20, 1);
+        $file->setId(13);
+        $this->files->method('listInFolder')->willReturn(['images' => [$file], 'total' => 1]);
+        $this->renditions->method('mapReadyByFileIds')->willReturn([]);
+
+        $page = $this->library()->listImages('', 1, 24, true);
+
+        $this->assertSame('Brand/icon.svg', $page['images'][0]->thumbPath);
+        $this->assertSame('Brand/icon.svg', $page['images'][0]->insertPath);
     }
 
     private function file(string $filename, string $relativePath, int $width, int $height, int $bytes, int $mtime): MediaAssetFile

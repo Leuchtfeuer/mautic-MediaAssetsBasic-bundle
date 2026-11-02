@@ -12,11 +12,11 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Translation;
 /**
  * Writes a single rendition file from a master image (Imagick preferred, GD fallback).
  */
-final readonly class ImageRenditionWriter
+class ImageRenditionWriter
 {
     public function __construct(
-        private RenditionPaths $renditionPaths,
-        private ImageInspector $inspector,
+        private readonly RenditionPaths $renditionPaths,
+        private readonly ImageInspector $inspector,
     ) {
     }
 
@@ -39,7 +39,7 @@ final readonly class ImageRenditionWriter
             return null;
         }
 
-        $inspected = $this->inspector->inspectFile($sourceAbsolute, false);
+        $inspected = $this->inspector->inspectFile($sourceAbsolute, true);
         if (ImageInspector::SVG_MIME === $inspected->mime) {
             return null;
         }

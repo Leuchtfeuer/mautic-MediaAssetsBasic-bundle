@@ -43,6 +43,9 @@ final class MediaIndexTest extends TestCase
     /** @var list<object> */
     private array $persisted = [];
 
+    /** @var RenditionManager&MockObject|null */
+    private ?MockObject $renditions = null;
+
     protected function setUp(): void
     {
         $directory = sys_get_temp_dir().'/lf-media-index-'.bin2hex(random_bytes(4));
@@ -301,6 +304,50 @@ final class MediaIndexTest extends TestCase
         $this->assertSame(1, $summary->filesIndexedDuplicateChecksum);
     }
 
+    public function testSkipRenditionsDoesNotCallRenditionManager(): void
+    {
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->never())->method('ensureForFile');
+        $this->renditions = $renditions;
+
+        $summary = $this->index()->run(false, false, true);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertSame(0, $summary->renditionsGenerated);
+    }
+
+    public function testDefaultRunRequestsRenditionGeneration(): void
+    {
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->atLeastOnce())
+            ->method('ensureForFile')
+            ->willReturn(new RenditionEnsureResult(generated: 1, skipped: 1));
+        $this->renditions = $renditions;
+
+        $summary = $this->index()->run(false, false, false);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertSame(1, $summary->renditionsGenerated);
+        $this->assertSame(1, $summary->renditionsSkipped);
+    }
+
+    public function testSkipsFilesUnderTheRenditionsRoot(): void
+    {
+        mkdir($this->directory.'/_renditions/brand', 0775, true);
+        file_put_contents($this->directory.'/_renditions/brand/hero_400.png', $this->png());
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'visible.png', $this->png());
+
+        $summary = $this->index()->run(false, false, true);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertArrayHasKey('visible.png', $this->fileStore);
+        $this->assertArrayNotHasKey('_renditions/brand/hero_400.png', $this->fileStore);
+    }
+
     private function index(): MediaIndex
     {
         $helper = $this->createMock(PathsHelper::class);
@@ -310,9 +357,11 @@ final class MediaIndexTest extends TestCase
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');
 
-        $renditions = $this->createMock(RenditionManager::class);
-        $renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
-        $renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
+        $renditions = $this->renditions ?? $this->createMock(RenditionManager::class);
+        if (null === $this->renditions) {
+            $renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
+            $renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
+        }
 
         return new MediaIndex(
             new MediaPath(new ImageUrls($helper, $parameters)),
