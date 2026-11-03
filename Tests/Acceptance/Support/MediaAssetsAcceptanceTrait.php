@@ -61,10 +61,73 @@ trait MediaAssetsAcceptanceTrait
         $this->indexSeededImage($filename, $path);
     }
 
+    /**
+     * Write a large JPEG and reconcile via the index command so standard/thumb exist.
+     *
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    protected function writeLargeImageWithRenditions(AcceptanceTester $I, string $filename, int $width = 1800, int $height = 900): void
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            throw new RuntimeException('GD is required to seed large acceptance images.');
+        }
+
+        $directory = $this->imageDirectory();
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            throw new RuntimeException('The image directory could not be created.');
+        }
+
+        $path  = $directory.'/'.$filename;
+        $image = imagecreatetruecolor($width, $height);
+        if (false === $image) {
+            throw new RuntimeException('Could not create the large acceptance image.');
+        }
+        $color = imagecolorallocate($image, 25, 55, 85);
+        if (false === $color) {
+            imagedestroy($image);
+            throw new RuntimeException('Could not allocate a colour for the acceptance image.');
+        }
+        imagefilledrectangle($image, 0, 0, $width, $height, $color);
+        imagejpeg($image, $path, 90);
+        imagedestroy($image);
+
+        $this->runMediaIndex();
+    }
+
+    protected function runMediaIndex(bool $skipRenditions = false): void
+    {
+        $root   = dirname(__DIR__, 5);
+        $binary = $root.'/bin/console';
+        if (!is_file($binary)) {
+            throw new RuntimeException('bin/console was not found for media indexing.');
+        }
+
+        $command = sprintf(
+            'php %s leuchtfeuer:media:index-media%s',
+            escapeshellarg($binary),
+            $skipRenditions ? ' --skip-renditions' : '',
+        );
+        $output = [];
+        $code   = 0;
+        exec($command.' 2>&1', $output, $code);
+        if (0 !== $code) {
+            throw new RuntimeException("Media index failed ({$code}): ".implode("\n", $output));
+        }
+    }
+
     protected function deleteImages(AcceptanceTester $I, string $prefix): void
     {
-        $paths = glob($this->imageDirectory().'/'.$prefix.'*');
-        if (is_array($paths)) {
+        $directory = $this->imageDirectory();
+        $patterns  = [
+            $directory.'/'.$prefix.'*',
+            $directory.'/_renditions/'.$prefix.'*',
+        ];
+        foreach ($patterns as $pattern) {
+            $paths = glob($pattern);
+            if (!is_array($paths)) {
+                continue;
+            }
             foreach ($paths as $path) {
                 if (is_file($path)) {
                     unlink($path);

@@ -8,6 +8,10 @@ use Mautic\CoreBundle\Helper\PathsHelper;
 use Mautic\CoreBundle\Test\MauticMysqlTestCase;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaRendition;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionPreset;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionState;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\RenditionPaths;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -40,11 +44,18 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
             if (is_file($path)) {
                 unlink($path);
             }
+            foreach (RenditionPreset::cases() as $preset) {
+                $derived = $directory.'/'.RenditionPaths::relativePathFor($relative, $preset);
+                if (is_file($derived)) {
+                    unlink($derived);
+                }
+            }
         }
+        $this->removeEmptyDirsUnder($directory.'/'.RenditionPaths::ROOT);
         foreach (array_reverse($this->createdFolders) as $relative) {
             $path = $directory.'/'.$relative;
             if (is_dir($path)) {
-                rmdir($path);
+                @rmdir($path);
             }
         }
 
@@ -141,6 +152,164 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
         $this->assertSame($before, $after);
     }
 
+    public function testIndexesLargeImageWithStandardAndThumbRenditions(): void
+    {
+        $folder = 'Rendition'.bin2hex(random_bytes(3));
+        $this->mkdirRelative($folder);
+        $name = $this->writeJpeg('large-'.bin2hex(random_bytes(2)).'.jpg', $folder, 2000, 1200);
+
+        $display = $this->runIndexCommand();
+        $this->assertStringContainsString('Renditions generated', $display);
+
+        $relative = $folder.'/'.$name;
+        $file     = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $relative]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+
+        $rows = $this->em->getRepository(MediaRendition::class)->findBy(['file' => $file]);
+        $this->assertCount(2, $rows);
+
+        $byPreset = [];
+        foreach ($rows as $row) {
+            $byPreset[$row->getPreset()->value] = $row;
+            $this->assertSame(RenditionState::Ready, $row->getState());
+            $this->assertTrue(is_file($this->mediaRoot().'/'.$row->getStoragePath()));
+            $this->assertGreaterThan(0, $row->getBytes());
+            $this->assertGreaterThan(0, $row->getWidth());
+        }
+
+        $this->assertArrayHasKey(RenditionPreset::Standard->value, $byPreset);
+        $this->assertArrayHasKey(RenditionPreset::Thumb->value, $byPreset);
+        $this->assertSame(1600, max($byPreset[RenditionPreset::Standard->value]->getWidth(), $byPreset[RenditionPreset::Standard->value]->getHeight()));
+        $this->assertSame(400, max($byPreset[RenditionPreset::Thumb->value]->getWidth(), $byPreset[RenditionPreset::Thumb->value]->getHeight()));
+        $this->assertNotInstanceOf(MediaAssetFile::class, $this->em->getRepository(MediaAssetFile::class)->findOneBy([
+            'relativePath' => $byPreset[RenditionPreset::Thumb->value]->getStoragePath(),
+        ]));
+    }
+
+    public function testIndexesSmallImageWithThumbOnly(): void
+    {
+        $name = $this->writeJpeg('small-'.bin2hex(random_bytes(2)).'.jpg', '', 800, 600);
+        $this->runIndexCommand();
+
+        $file = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+
+        $rows = $this->em->getRepository(MediaRendition::class)->findBy(['file' => $file]);
+        $this->assertCount(2, $rows);
+        $byPreset = [];
+        foreach ($rows as $row) {
+            $byPreset[$row->getPreset()->value] = $row;
+        }
+        $thumb    = $byPreset[RenditionPreset::Thumb->value] ?? null;
+        $standard = $byPreset[RenditionPreset::Standard->value] ?? null;
+        $this->assertInstanceOf(MediaRendition::class, $thumb);
+        $this->assertInstanceOf(MediaRendition::class, $standard);
+        $this->assertSame(RenditionState::Ready, $thumb->getState());
+        $this->assertSame(RenditionState::NotNeeded, $standard->getState());
+        $this->assertFalse(is_file($this->mediaRoot().'/'.RenditionPaths::relativePathFor($name, RenditionPreset::Standard)));
+    }
+
+    public function testSkipRenditionsIndexesWithoutWritingDerivedFiles(): void
+    {
+        $name = $this->writeJpeg('skip-'.bin2hex(random_bytes(2)).'.jpg', '', 1800, 900);
+
+        $display = $this->runIndexCommand(['--skip-renditions' => true]);
+        $this->assertStringContainsString('Skipping rendition generation.', $display);
+
+        $file = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+        $this->assertSame(0, (int) $this->em->getRepository(MediaRendition::class)->count(['file' => $file]));
+        $this->assertFalse(is_file($this->mediaRoot().'/'.RenditionPaths::relativePathFor($name, RenditionPreset::Thumb)));
+
+        $second = $this->runIndexCommand();
+        $this->em->clear();
+
+        $file = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+        $rows = $this->em->getRepository(MediaRendition::class)->findBy(['file' => $file]);
+        $this->assertNotEmpty($rows);
+        $this->assertStringContainsString('Renditions generated', $second);
+    }
+
+    public function testSecondRunDoesNotRegenerateExistingRenditions(): void
+    {
+        $name = $this->writeJpeg('idempotent-'.bin2hex(random_bytes(2)).'.jpg', '', 1800, 900);
+        $this->runIndexCommand();
+
+        $file = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+        $before = $this->em->getRepository(MediaRendition::class)->findBy(['file' => $file]);
+        $this->assertNotEmpty($before);
+        $mtimes = [];
+        foreach ($before as $row) {
+            $path = $this->mediaRoot().'/'.$row->getStoragePath();
+            $this->assertTrue(is_file($path));
+            $mtimes[$row->getStoragePath()] = filemtime($path);
+        }
+
+        sleep(1);
+        $display = $this->runIndexCommand();
+        $this->assertStringContainsString('Renditions skipped', $display);
+
+        foreach ($mtimes as $storagePath => $mtime) {
+            $this->assertSame($mtime, filemtime($this->mediaRoot().'/'.$storagePath));
+        }
+    }
+
+    public function testUnreadableImageDoesNotAbortTheRun(): void
+    {
+        $good = $this->writePng('good-'.bin2hex(random_bytes(2)).'.png');
+        $bad  = 'bad-'.bin2hex(random_bytes(2)).'.jpg';
+        file_put_contents($this->mediaRoot().'/'.$bad, 'not-a-jpeg');
+        $this->createdFiles[] = $bad;
+
+        $display = $this->runIndexCommand();
+        $this->assertStringContainsString('Media index run finished.', $display);
+
+        $goodFile = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $good]);
+        $this->assertInstanceOf(MediaAssetFile::class, $goodFile);
+        $this->assertNotInstanceOf(
+            MediaAssetFile::class,
+            $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $bad]),
+        );
+    }
+
+    public function testFailedRenditionIsRetriedOnNextRun(): void
+    {
+        $name = $this->writeJpeg('retry-'.bin2hex(random_bytes(2)).'.jpg', '', 1800, 900);
+        $this->runIndexCommand(['--skip-renditions' => true]);
+
+        $file = $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]);
+        $this->assertInstanceOf(MediaAssetFile::class, $file);
+
+        $failed = (new MediaRendition())
+            ->setFile($file)
+            ->setPreset(RenditionPreset::Thumb)
+            ->setFormat('')
+            ->setWidth(0)
+            ->setHeight(0)
+            ->setBytes(0)
+            ->setStoragePath(RenditionPaths::relativePathFor($name, RenditionPreset::Thumb))
+            ->setState(RenditionState::Failed)
+            ->setFailureReason('previous failure')
+            ->setDateAdded(new \DateTimeImmutable())
+            ->setDateModified(new \DateTimeImmutable());
+        $this->em->persist($failed);
+        $this->em->flush();
+
+        $this->runIndexCommand();
+        $this->em->clear();
+
+        $rows = $this->em->getRepository(MediaRendition::class)->findBy([
+            'file'   => $this->em->getRepository(MediaAssetFile::class)->findOneBy(['relativePath' => $name]),
+            'preset' => RenditionPreset::Thumb->value,
+        ]);
+        $this->assertCount(1, $rows);
+        $this->assertSame(RenditionState::Ready, $rows[0]->getState());
+        $this->assertNull($rows[0]->getFailureReason());
+        $this->assertTrue(is_file($this->mediaRoot().'/'.$rows[0]->getStoragePath()));
+    }
+
     /**
      * @param array<string, bool|string> $options
      */
@@ -192,6 +361,58 @@ final class IndexMediaCommandFunctionalTest extends MauticMysqlTestCase
         $this->createdFiles[]  = $relative;
 
         return $filename;
+    }
+
+    /**
+     * @param int<1, max> $width
+     * @param int<1, max> $height
+     */
+    private function writeJpeg(string $filename, string $folder, int $width, int $height): string
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('GD required to create large JPEG fixtures');
+        }
+
+        $directory = '' === $folder ? $this->mediaRoot() : $this->mediaRoot().'/'.$folder;
+        if (!is_dir($directory)) {
+            $this->mkdirRelative($folder);
+        }
+
+        $image = imagecreatetruecolor($width, $height);
+        $this->assertNotFalse($image);
+        $color = imagecolorallocate($image, 30, 60, 90);
+        $this->assertNotFalse($color);
+        imagefilledrectangle($image, 0, 0, $width, $height, $color);
+        imagejpeg($image, $directory.'/'.$filename, 90);
+        imagedestroy($image);
+
+        $relative             = '' === $folder ? $filename : $folder.'/'.$filename;
+        $this->createdFiles[] = $relative;
+
+        return $filename;
+    }
+
+    private function removeEmptyDirsUnder(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($files as $file) {
+            if (!$file instanceof \SplFileInfo) {
+                continue;
+            }
+            if ($file->isDir()) {
+                @rmdir($file->getPathname());
+            } else {
+                @unlink($file->getPathname());
+            }
+        }
+        @rmdir($directory);
     }
 
     private function countErrorHandlers(): int

@@ -115,6 +115,16 @@ final class MediaPathTest extends TestCase
         $this->paths()->resolve('.hidden');
     }
 
+    public function testRejectsTheRenditionsRoot(): void
+    {
+        mkdir($this->directory.'/_renditions/brand', 0775, true);
+
+        $this->expectException(ImageRejectedException::class);
+        $this->expectExceptionMessage(Translation::ERROR_PATH);
+
+        $this->paths()->resolve('_renditions/brand');
+    }
+
     private function paths(): MediaPath
     {
         $helper = $this->createMock(PathsHelper::class);

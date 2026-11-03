@@ -6,6 +6,8 @@ Powerful Media & Assets Manager for organizing and picking images etc. in the Ma
 
 When the plugin is published, GrapesJS opens this plugin's image picker instead of the built-in media manager. The picker lists images from `media/images`, uploads new ones, and can import an image from a URL.
 
+Raster images get derived **thumb** and **standard** renditions under `media/images/_renditions/`. The grid uses the thumb for previews; double-click insert prefers the standard file when it exists.
+
 ## Requirements
 
 - Mautic **7.x**
@@ -58,6 +60,24 @@ Inside those builders it opens wherever GrapesJS asks for an image:
 
 Double-click a tile to insert it into the builder. One successful upload selects the new tile(s) and does not insert until you double-click. Images are stored in `media/images`, so they keep rendering after the plugin is unpublished.
 
+### Image previews and insert sizes
+
+| Role | Long edge | JPEG quality | Used for |
+|------|-----------|--------------|----------|
+| **thumb** | 400 | 75 | Picker grid preview |
+| **standard** | 1600 | 82 | Insert into the builder |
+
+Behaviour:
+
+- Ready thumb → tile shows that image; otherwise a placeholder (original is not shown in the grid).
+- Ready standard → insert URL points at it; otherwise the original file is inserted.
+- SVG uses the original path for both preview and insert (no derived files).
+- Animated GIF skips the standard preset; thumb may still be generated.
+- If the original is already ≤ 1600 on the long edge, no standard file is written and insert keeps the original.
+- Upload and import generate renditions in the same request (when the lock is free). The index command fills gaps for existing files.
+
+Derived files mirror the folder tree under `_renditions/`, e.g. `Brand/hero.jpg` → `_renditions/Brand/hero_400.jpg` and `_renditions/Brand/hero_1600.jpg`. Generation prefers Imagick and falls back to GD. Rows are stored in `lf_media_renditions` (`ready` / `failed` / `not_needed`); a later ensure run retries failures. Concurrent generation uses a process lock (~20s per file). If the lock is busy during upload or move, the master file and index update still succeed and derived files catch up on a later index run.
+
 ### Selection and bulk move
 
 | Action | What it does |
@@ -70,7 +90,7 @@ Double-click a tile to insert it into the builder. One successful upload selects
 
 While a bulk move runs, the picker shows a progress bar (`Moving X of Y…`). Changing folder (sidebar or breadcrumb) clears the selection.
 
-## File & folder index (design)
+## File & folder index
 
 The filesystem remains the canonical, human-readable layout. The **picker and list API read only from the database index** — no `scandir` or Symfony Finder on the HTTP request path.
 
@@ -115,38 +135,41 @@ Recommended invocation: `nice -n 10 ionice -c2 -n7 php bin/console leuchtfeuer:m
 4. **Both exist** but **mtime/bytes** differ (or stored dimensions missing) → re-index that file only.
 5. **Folders on disk without a DB row** → insert (including empty folders).
 6. Non-images, dotfiles, unreadable files → **skip** without aborting the run.
+7. For newly indexed or updated raster files, ensure **thumb** / **standard** unless `--skip-renditions` is set.
 
 **`--all`:** full tree walk; re-inspect all files; align folder tree with disk; apply or clear soft delete according to disk state.
 
-**`--dry-run`:** same logic as the active mode (default or `--all`) but **no database writes** — log a summary of changes only.
+**`--dry-run`:** same logic as the active mode (default or `--all`) but **no database writes** — log a summary of changes only (including planned rendition work).
+
+**`--skip-renditions`:** reconcile the file/folder index without writing derived files; a later run without the flag fills them in.
 
 The command is a **safety net and initial backfill**, not the primary mechanism for day-to-day operation (that is the request path plus upload).
 
-### Schema (minimum for the index story)
+### Index schema
 
-Unique key: **`relative_path`** (separate folder and file tables, or equivalent model).
+Unique key: **`relative_path`** (separate folder and file tables).
 
 **Folder:** `id`, `parent_id`, `relative_path` (unique), `name`, timestamps.
 
 **File:** `id`, `folder_id`, `relative_path` (unique), `filename`, `mime`, `width`, `height`, `bytes`, `file_mtime`, `checksum` (SHA-256, nullable until indexed), `date_added` (nullable until indexed), `missing_since` (nullable).
 
-**Later:** UUID, usage references, path aliases, renditions root outside the browsable tree, versioning.
+**Renditions (`lf_media_renditions`):** `file_id`, preset (`standard` / `thumb`), format, dimensions, bytes, `storage_path`, state (`ready` / `failed` / `not_needed`), optional failure reason, timestamps. `not_needed` marks an intentional skip (e.g. standard when the master is already ≤ 1600, or animated GIF). The indexer ignores the `_renditions/` tree as source files.
 
 ### Picker / API
 
-- Files in a folder: from the database, same pagination as today.
-- Folder tree: from the database; **`count` is recursive** (files in the whole subtree, as today).
+- Files in a folder: from the database (paginated); each image may expose `thumbPath` / `insertPath` (and matching public URLs).
+- Folder tree: from the database; **`count` is recursive** (files in the whole subtree).
 - SVG in the picker: existing context rule (Referer / landing-page builder). SVG may exist on disk and in the index even when the picker filters it out. **Folder counts** follow the same rule: SVGs are included only in the landing-page picker; email builders exclude them so the badge matches the visible grid.
 
-### Acceptance criteria (agreed)
+### Index behaviour
 
-1. After **upload**, the file is in the index with dimensions; the picker shows it **without** filesystem inspect on the request.
-2. **Default command:** adds disk files/folders missing from the DB; soft-deletes index rows whose files are missing on disk; when nothing changed, **no logical state change**.
-3. A **second default run** with unchanged disk and DB → no logical change to state or metadata.
-4. **`--all`:** full reindex including soft delete; metadata may be re-read but stays the same if files did not change.
-5. **`--dry-run`:** does not write to the database.
-6. Picker list/tree: **database only**; functional tests use a **mocked repository** (no Finder/scandir).
-7. Soft-deleted files **do not** appear in the picker.
+- After **upload**, the file is in the index with dimensions (and renditions when generation succeeds); the picker list does **not** inspect the filesystem per request.
+- **Default command:** adds disk files/folders missing from the DB; soft-deletes index rows whose files are missing on disk; when nothing changed, **no logical state change**.
+- A **second default run** with unchanged disk and DB → no logical change to state or metadata.
+- **`--all`:** full reindex including soft delete; metadata may be re-read but stays the same if files did not change.
+- **`--dry-run`:** does not write to the database.
+- Picker list/tree: **database only**.
+- Soft-deleted files **do not** appear in the picker.
 
 ### Checksum / duplicate handling
 
@@ -155,15 +178,17 @@ Unique key: **`relative_path`** (separate folder and file tables, or equivalent 
 - Decisions: `use_existing` | `keep_both` | `replace` (name clash overwrite in place; `date_added` kept). Keep both may still apply `uniqueName` (`-2`) if the target name is taken.
 - Console index allows duplicate checksums; report includes `of which duplicate checksum` for newly indexed rows whose hash already existed.
 
-### Out of scope
+### Current limitations
 
-- Event-based indexing, on-demand re-scan from the UI.
-- Versioning / UUID / “uploaded by” metadata.
-- Renditions, usage, path aliases.
+- No event-based indexing or on-demand re-scan from the UI.
+- No versioning, UUID, or “uploaded by” metadata.
+- Presets are hard-coded (no preset manager UI); no usage tracking or path aliases.
+- Missing derived files on disk are not regenerated on picker open — run the index command (or re-upload) to recreate them.
+- No queued generation, CDN, signed URLs, or format conversion (WebP/AVIF).
 
 ### Performance
 
-No formal performance acceptance criteria in the first story — expensive dimension reads happen on **upload** and during the **command**, not in the picker.
+Expensive dimension reads and image resizing run on **upload** and during the **index command**, not while the picker lists folders.
 
 ## Troubleshooting
 
@@ -184,10 +209,11 @@ bin/console mautic:plugins:reload
 
 | Command | What it does |
 |--------|----------------|
-| `bin/console leuchtfeuer:media:index-media` | Default reconcile: index files/folders that exist on disk but not in the DB; soft-delete index rows missing on disk; re-inspect only when mtime/bytes (or missing dimensions) differ. |
+| `bin/console leuchtfeuer:media:index-media` | Default reconcile: index files/folders that exist on disk but not in the DB; soft-delete index rows missing on disk; re-inspect only when mtime/bytes (or missing dimensions) differ; ensure thumb/standard for raster files. |
 | `bin/console leuchtfeuer:media:index-media --dry-run` | Same logic as the mode you combine it with (default or `--all`), but **no database writes** — prints a summary of what would change. |
 | `bin/console leuchtfeuer:media:index-media --all` | Full reindex: re-inspect every file on disk, align the folder tree, and apply or clear soft delete according to disk state. |
 | `bin/console leuchtfeuer:media:index-media --all --dry-run` | Preview a full `--all` run without writing to the database. |
+| `bin/console leuchtfeuer:media:index-media --skip-renditions` | Index/reconcile without writing standard/thumb files; a later run without the flag fills them in. |
 
 See [Console index command](#console-index-command) above for the full reconcile rules.
 

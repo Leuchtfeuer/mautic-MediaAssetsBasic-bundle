@@ -8,12 +8,17 @@ use Mautic\CoreBundle\Helper\PathsHelper;
 use Mautic\CoreBundle\Test\MauticMysqlTestCase;
 use Mautic\PluginBundle\Entity\Integration;
 use Mautic\PluginBundle\Entity\Plugin;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Enum\RenditionPreset;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Integration\LeuchtfeuerMediaAssetsBasicIntegration;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\RenditionPaths;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 final class ImageControllerFunctionalTest extends MauticMysqlTestCase
 {
@@ -45,6 +50,26 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
             if (is_file($path)) {
                 unlink($path);
             }
+            foreach (RenditionPreset::cases() as $preset) {
+                $derived = $directory.'/'.RenditionPaths::relativePathFor($relative, $preset);
+                if (is_file($derived)) {
+                    unlink($derived);
+                }
+            }
+        }
+        $renditionsRoot = $directory.'/'.RenditionPaths::ROOT;
+        if (is_dir($renditionsRoot)) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($renditionsRoot, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
+            foreach ($iterator as $file) {
+                if (!$file instanceof \SplFileInfo) {
+                    continue;
+                }
+                $file->isDir() ? @rmdir($file->getPathname()) : @unlink($file->getPathname());
+            }
+            @rmdir($renditionsRoot);
         }
         foreach (array_reverse($this->createdFolders) as $relative) {
             $path = $directory.'/'.$relative;
@@ -97,6 +122,8 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $name = $image['name'] ?? null;
         $this->assertIsString($name);
         $this->uploadedPaths[] = $name;
+        $this->assertArrayHasKey('thumbUrl', $image);
+        $this->assertArrayHasKey('url', $image);
 
         $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images?limit=50');
         $list = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -910,6 +937,106 @@ final class ImageControllerFunctionalTest extends MauticMysqlTestCase
         $session->save();
 
         return $token;
+    }
+
+    public function testUploadOfLargeImageReturnsThumbUrlAndInsertUrl(): void
+    {
+        $this->publishPlugin();
+        if (!function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('GD required');
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'lf-media-large');
+        $this->assertIsString($path);
+        $image = imagecreatetruecolor(1800, 900);
+        $this->assertNotFalse($image);
+        $color = imagecolorallocate($image, 10, 20, 30);
+        $this->assertNotFalse($color);
+        imagefilledrectangle($image, 0, 0, 1800, 900, $color);
+        imagejpeg($image, $path, 90);
+        imagedestroy($image);
+
+        $file = new UploadedFile($path, 'large-hero.jpg', 'image/jpeg', null, true);
+        $this->client->request(
+            Request::METHOD_POST,
+            '/s/media-assets-basic/images/upload',
+            [],
+            ['files' => [$file]],
+            [
+                'HTTP_X-Requested-With' => 'XMLHttpRequest',
+                'HTTP_X-CSRF-Token'     => $this->ajaxCsrfToken(),
+            ],
+        );
+
+        $upload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($upload);
+        $files = $upload['files'] ?? null;
+        $this->assertIsArray($files);
+        $first = $files[0] ?? null;
+        $this->assertIsArray($first);
+        $imagePayload = $first['image'] ?? null;
+        $this->assertIsArray($imagePayload);
+        $name = $imagePayload['name'] ?? null;
+        $this->assertIsString($name);
+        $this->uploadedPaths[] = $name;
+
+        $thumbUrl = $imagePayload['thumbUrl'] ?? null;
+        $url      = $imagePayload['url'] ?? null;
+        $this->assertIsString($thumbUrl);
+        $this->assertIsString($url);
+        $this->assertStringContainsString('_renditions/', $thumbUrl);
+        $this->assertStringContainsString('_400.', $thumbUrl);
+        $this->assertStringContainsString('_renditions/', $url);
+        $this->assertStringContainsString('_1600.', $url);
+        $this->assertNotSame($thumbUrl, $url);
+    }
+
+    public function testListShowsNullThumbUrlWhenIndexedWithSkipRenditions(): void
+    {
+        $this->publishPlugin();
+        if (!function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('GD required');
+        }
+
+        $paths = self::getContainer()->get(PathsHelper::class);
+        $this->assertInstanceOf(PathsHelper::class, $paths);
+        $directory = rtrim($paths->getImagePath(), '/');
+        $name      = 'pending-'.bin2hex(random_bytes(2)).'.jpg';
+        $image     = imagecreatetruecolor(1800, 900);
+        $this->assertNotFalse($image);
+        $color = imagecolorallocate($image, 40, 50, 60);
+        $this->assertNotFalse($color);
+        imagefilledrectangle($image, 0, 0, 1800, 900, $color);
+        imagejpeg($image, $directory.'/'.$name, 90);
+        imagedestroy($image);
+        $this->uploadedPaths[] = $name;
+
+        $kernel = self::getContainer()->get(KernelInterface::class);
+        $this->assertInstanceOf(KernelInterface::class, $kernel);
+        $application = new Application($kernel);
+        $application->setAutoExit(false);
+        $tester = new CommandTester($application->find('leuchtfeuer:media:index-media'));
+        $this->assertSame(0, $tester->execute(['--skip-renditions' => true]), $tester->getDisplay());
+
+        $this->client->request(Request::METHOD_GET, '/s/media-assets-basic/images?limit=50');
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertIsArray($payload);
+        $images = $payload['images'] ?? null;
+        $this->assertIsArray($images);
+        $match = null;
+        foreach ($images as $item) {
+            if (is_array($item) && ($item['name'] ?? null) === $name) {
+                $match = $item;
+                break;
+            }
+        }
+        $this->assertIsArray($match);
+        $this->assertArrayHasKey('thumbUrl', $match);
+        $this->assertNull($match['thumbUrl']);
+        $this->assertIsString($match['url'] ?? null);
+        $this->assertStringNotContainsString('_renditions/', (string) $match['url']);
     }
 
     private function publishPlugin(): void

@@ -10,6 +10,12 @@
   color: #161616;
 }
 
+/* GrapesJS keeps its Asset Manager modal chrome under the custom picker; hide the orphan shell. */
+body:has(#lf-media-assets-basic) .gjs-mdl-container {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .lf-media-assets__dialog {
   position: relative;
   display: flex;
@@ -674,6 +680,20 @@
   max-width: 100%;
   max-height: 140px;
   object-fit: contain;
+}
+
+.lf-media-assets__thumb-placeholder {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    -45deg,
+    #c6c6c6,
+    #c6c6c6 6px,
+    #e0e0e0 6px,
+    #e0e0e0 12px
+  );
 }
 
 .lf-media-assets__meta {

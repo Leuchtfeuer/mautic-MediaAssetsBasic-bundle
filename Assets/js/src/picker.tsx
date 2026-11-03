@@ -266,6 +266,7 @@ function FolderRows({
             return;
           }
           event.preventDefault();
+          event.stopPropagation();
           event.dataTransfer.dropEffect = 'move';
           onDropTarget(node.path);
         }}
@@ -283,6 +284,7 @@ function FolderRows({
             return;
           }
           event.preventDefault();
+          event.stopPropagation();
           onDropTarget(null);
           onMoveToFolder(node.path, movable);
         }}
@@ -469,53 +471,95 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     setSelectionAnchor(image.path);
   }
 
+  function isUploadableImage(file: File): boolean {
+    if (file.type.startsWith('image/')) {
+      return config.allowSvg || 'image/svg+xml' !== file.type;
+    }
+    // Some browsers leave type empty for drag-and-drop; fall back to extension.
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.svg')) {
+      return Boolean(config.allowSvg);
+    }
+
+    return ['.png', '.jpg', '.jpeg', '.gif', '.webp'].some((ext) => name.endsWith(ext));
+  }
+
   async function sendFiles(files: File[]): Promise<void> {
-    const batch = files.length > 1;
-    const rows: FileProgress[] = files.map((file) => ({
+    const uploadable = files.filter(isUploadableImage);
+    if (0 === uploadable.length) {
+      if (files.length > 0) {
+        setError(messages.uploadFailed);
+      }
+
+      return;
+    }
+
+    const batch = uploadable.length > 1;
+    const rows: FileProgress[] = uploadable.map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
       progress: 0,
       file,
     }));
     setProgress(rows);
-    setUploadBatchTotal(files.length);
+    setUploadBatchTotal(uploadable.length);
+    setError('');
     const stored: MediaImage[] = [];
-    for (const file of files) {
-      const id = `${file.name}-${file.size}-${file.lastModified}`;
-      const checked = await checkUploadFile(config, file, path);
-      if (!checked.ok) {
-        setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: checked.error } : row)));
-        continue;
-      }
-      if (checked.conflict) {
-        setProgress((current) => current.map((row) => (
-          row.id === id ? { ...row, progress: 1, conflict: checked.conflict ?? undefined, file } : row
-        )));
-        continue;
-      }
-      const result = await uploadFile(config, file, path, (value) => {
-        setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: value } : row)));
-      });
-      if (result.conflict) {
-        setProgress((current) => current.map((row) => (
-          row.id === id ? { ...row, progress: 1, conflict: result.conflict, file } : row
-        )));
-        continue;
-      }
-      setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: result.error } : row)));
-      if (result.image) {
-        stored.push(result.image);
-        if (!batch) {
-          await applyUploadedImage(result.image, Boolean(result.usedExisting), false);
+    try {
+      for (const file of uploadable) {
+        const id = `${file.name}-${file.size}-${file.lastModified}`;
+        const checked = await checkUploadFile(config, file, path);
+        if (!checked.ok) {
+          setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: checked.error } : row)));
+          continue;
+        }
+        if (checked.conflict) {
+          setProgress((current) => current.map((row) => (
+            row.id === id ? { ...row, progress: 1, conflict: checked.conflict ?? undefined, file } : row
+          )));
+          continue;
+        }
+        const result = await uploadFile(config, file, path, (value) => {
+          setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: value } : row)));
+        });
+        if (result.conflict) {
+          setProgress((current) => current.map((row) => (
+            row.id === id ? { ...row, progress: 1, conflict: result.conflict, file } : row
+          )));
+          continue;
+        }
+        setProgress((current) => current.map((row) => (row.id === id ? { ...row, progress: 1, error: result.error } : row)));
+        if (result.image) {
+          stored.push(result.image);
+          if (!batch) {
+            await applyUploadedImage(result.image, Boolean(result.usedExisting), false);
+          }
         }
       }
-    }
-    setProgress((current) => current.filter((row) => row.error || row.conflict));
-    if (batch && stored.length > 0) {
-      await refreshImages(1);
-      setTreeVersion((value) => value + 1);
-      setSelectedPaths(new Set(stored.map((image) => image.path)));
-      setSelectionAnchor(stored[stored.length - 1].path);
+      setProgress((current) => current.filter((row) => row.error || row.conflict));
+      if (batch && stored.length > 0) {
+        await refreshImages(1);
+        setTreeVersion((value) => value + 1);
+        setSelectedPaths(new Set(stored.map((image) => image.path)));
+        setSelectionAnchor(stored[stored.length - 1].path);
+      }
+    } catch (reason: unknown) {
+      // Upload may have succeeded while the follow-up list/folders refresh failed.
+      setError(reason instanceof Error ? reason.message : messages.loadFailed);
+      if (stored.length > 0) {
+        setImages((current) => {
+          const byPath = new Map(current.map((image) => [image.path, image]));
+          for (const image of stored) {
+            byPath.set(image.path, image);
+          }
+
+          return Array.from(byPath.values());
+        });
+        setSelectedPaths(new Set(stored.map((image) => image.path)));
+        setSelectionAnchor(stored[stored.length - 1].path);
+        setTotal((current) => Math.max(current, stored.length));
+      }
+      setProgress((current) => current.filter((row) => row.error || row.conflict));
     }
   }
 
@@ -790,8 +834,30 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
     setProgress((current) => current.filter((row) => row.id !== id));
   }
 
+  function stopBuilderDrag(event: React.DragEvent<HTMLElement>): void {
+    // Stop GrapesJS canvas handlers; allow drop so our onDrop can upload.
+    event.preventDefault();
+    event.stopPropagation();
+    if (0 === draggingImagePaths.length && Array.from(event.dataTransfer.types).includes('Files')) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
   return (
-    <div className="lf-media-assets" role="presentation">
+    <div
+      className="lf-media-assets"
+      role="presentation"
+      onDragEnter={stopBuilderDrag}
+      onDragOver={stopBuilderDrag}
+      onDrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (draggingImagePaths.length > 0 || 0 === event.dataTransfer.files.length) {
+          return;
+        }
+        void sendFiles(Array.from(event.dataTransfer.files));
+      }}
+    >
       <div className="lf-media-assets__dialog" role="dialog" aria-label={messages.images}>
         <header className="lf-media-assets__header">
           <h2>{messages.images}</h2>
@@ -982,11 +1048,21 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                 return;
               }
               event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = 'copy';
               setDragging(true);
             }}
-            onDragLeave={() => setDragging(false)}
+            onDragLeave={(event) => {
+              // Ignore leave events that stay inside the drop body (entering children).
+              const next = event.relatedTarget;
+              if (next instanceof Node && event.currentTarget.contains(next)) {
+                return;
+              }
+              setDragging(false);
+            }}
             onDrop={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               setDragging(false);
               if (draggingImagePaths.length > 0 || 0 === event.dataTransfer.files.length) {
                 return;
@@ -1113,7 +1189,7 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                   return (
                     <button
                       type="button"
-                      key={image.url}
+                      key={image.path}
                       className={selectedPaths.has(image.path) ? 'lf-media-assets__tile is-selected' : 'lf-media-assets__tile'}
                       title={image.path}
                       aria-selected={selectedPaths.has(image.path)}
@@ -1143,7 +1219,13 @@ export function Picker({ config, session }: { config: PickerConfig; session: Ass
                       onClick={(event) => selectImage(image, index, event)}
                       onDoubleClick={() => session.select(image.url)}
                     >
-                      <span className="lf-media-assets__preview"><img src={image.url} alt="" /></span>
+                      <span className="lf-media-assets__preview">
+                        {image.thumbUrl ? (
+                          <img src={image.thumbUrl} alt="" />
+                        ) : (
+                          <span className="lf-media-assets__thumb-placeholder" aria-hidden="true" />
+                        )}
+                      </span>
                       <span className="lf-media-assets__meta">
                         <span className="lf-media-assets__meta-name">{image.name}</span>
                         <span className="lf-media-assets__meta-size">

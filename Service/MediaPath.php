@@ -103,12 +103,16 @@ final readonly class MediaPath
             throw new ImageRejectedException(Translation::ERROR_PATH);
         }
 
+        if (RenditionPaths::isRenditionsRelativePath($relative)) {
+            throw new ImageRejectedException(Translation::ERROR_PATH);
+        }
+
         $parts = [];
         foreach (explode('/', $relative) as $part) {
             if ('' === $part || '.' === $part) {
                 continue;
             }
-            if ('..' === $part || str_starts_with($part, '.')) {
+            if ('..' === $part || str_starts_with($part, '.') || RenditionPaths::isRenditionsEntry($part)) {
                 throw new ImageRejectedException(Translation::ERROR_PATH);
             }
             $parts[] = $part;

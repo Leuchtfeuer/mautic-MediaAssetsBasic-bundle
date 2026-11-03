@@ -7,8 +7,11 @@ namespace MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Tests\Unit\Service;
 use Doctrine\ORM\EntityManagerInterface;
 use Mautic\CoreBundle\Helper\CoreParametersHelper;
 use Mautic\CoreBundle\Helper\PathsHelper;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\ListedImage;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\DTO\RenditionEnsureResult;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFile;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Entity\MediaAssetFolder;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Exception\RenditionBusyException;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFileRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Repository\MediaAssetFolderRepository;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageInspector;
@@ -16,6 +19,7 @@ use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageStorage;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\ImageUrls;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaIndex;
 use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\MediaPath;
+use MauticPlugin\LeuchtfeuerMediaAssetsBasicBundle\Service\RenditionManager;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -40,6 +44,9 @@ final class MediaIndexTest extends TestCase
 
     /** @var list<object> */
     private array $persisted = [];
+
+    /** @var (RenditionManager&MockObject)|null */
+    private ?MockObject $renditions = null;
 
     protected function setUp(): void
     {
@@ -158,7 +165,7 @@ final class MediaIndexTest extends TestCase
         mkdir($this->directory.'/test/ttt', 0775, true);
         (new ImageStorage(new ImageInspector()))->store($this->directory.'/test/ttt', 'nested.png', $this->png(), 'test/ttt');
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $this->entityManager->expects($this->atLeastOnce())->method('flush');
 
         $summary = $this->index()->run(false, false);
 
@@ -207,7 +214,7 @@ final class MediaIndexTest extends TestCase
             ->setFileMtime(1);
         $this->fileStore['gone.png'] = $missing;
 
-        $this->entityManager->expects($this->once())->method('flush');
+        $this->entityManager->expects($this->atLeastOnce())->method('flush');
 
         $summary = $this->index()->run(false, false);
 
@@ -299,6 +306,108 @@ final class MediaIndexTest extends TestCase
         $this->assertSame(1, $summary->filesIndexedDuplicateChecksum);
     }
 
+    public function testSkipRenditionsDoesNotCallRenditionManager(): void
+    {
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->never())->method('ensureForFile');
+        $renditions->expects($this->never())->method('rebuildForFile');
+        $this->renditions = $renditions;
+
+        $summary = $this->index()->run(false, false, true);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertSame(0, $summary->renditionsGenerated);
+    }
+
+    public function testDefaultRunRequestsRenditionGeneration(): void
+    {
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->atLeastOnce())
+            ->method('rebuildForFile')
+            ->willReturn(new RenditionEnsureResult(generated: 1, skipped: 1));
+        $renditions->expects($this->never())->method('ensureForFile');
+        $this->renditions = $renditions;
+
+        $summary = $this->index()->run(false, false, false);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertSame(1, $summary->renditionsGenerated);
+        $this->assertSame(1, $summary->renditionsSkipped);
+    }
+
+    public function testRegisterUploadedRebuildsRenditions(): void
+    {
+        $listed = (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->once())
+            ->method('rebuildForFile')
+            ->willReturn(new RenditionEnsureResult(generated: 2));
+        $renditions->expects($this->never())->method('ensureForFile');
+        $this->renditions = $renditions;
+
+        $this->index()->registerUploaded($listed, false);
+    }
+
+    public function testRegisterUploadedKeepsIndexWhenRenditionLockIsBusy(): void
+    {
+        $listed = (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->once())
+            ->method('rebuildForFile')
+            ->willThrowException(new RenditionBusyException(5));
+        $this->renditions = $renditions;
+
+        $this->index()->registerUploaded($listed, false);
+
+        $this->assertArrayHasKey('hero.png', $this->fileStore);
+    }
+
+    public function testRegisterMovedKeepsIndexWhenRenditionLockIsBusy(): void
+    {
+        $listed = (new ImageStorage(new ImageInspector()))->store($this->directory, 'hero.png', $this->png());
+        $this->index()->registerUploaded($listed, false, false);
+
+        mkdir($this->directory.'/album', 0775, true);
+        rename($this->directory.'/hero.png', $this->directory.'/album/hero.png');
+        $moved = new ListedImage(
+            'hero.png',
+            $listed->width,
+            $listed->height,
+            $listed->bytes,
+            'album/hero.png',
+        );
+
+        $renditions = $this->createMock(RenditionManager::class);
+        $renditions->expects($this->once())
+            ->method('rebuildForFile')
+            ->willThrowException(new RenditionBusyException(5));
+        $this->renditions = $renditions;
+
+        $this->index()->registerMoved('hero.png', $moved, false);
+
+        $this->assertArrayHasKey('album/hero.png', $this->fileStore);
+        $this->assertSame('album/hero.png', $this->fileStore['album/hero.png']->getRelativePath());
+    }
+
+    public function testSkipsFilesUnderTheRenditionsRoot(): void
+    {
+        mkdir($this->directory.'/_renditions/brand', 0775, true);
+        file_put_contents($this->directory.'/_renditions/brand/hero_400.png', $this->png());
+        (new ImageStorage(new ImageInspector()))->store($this->directory, 'visible.png', $this->png());
+
+        $summary = $this->index()->run(false, false, true);
+
+        $this->assertSame(1, $summary->filesIndexed);
+        $this->assertArrayHasKey('visible.png', $this->fileStore);
+        $this->assertArrayNotHasKey('_renditions/brand/hero_400.png', $this->fileStore);
+    }
+
     private function index(): MediaIndex
     {
         $helper = $this->createMock(PathsHelper::class);
@@ -308,12 +417,19 @@ final class MediaIndexTest extends TestCase
         $parameters = $this->createMock(CoreParametersHelper::class);
         $parameters->method('get')->willReturn('');
 
+        if (null === $this->renditions) {
+            $this->renditions = $this->createMock(RenditionManager::class);
+            $this->renditions->method('ensureForFile')->willReturn(new RenditionEnsureResult());
+            $this->renditions->method('rebuildForFile')->willReturn(new RenditionEnsureResult());
+        }
+
         return new MediaIndex(
             new MediaPath(new ImageUrls($helper, $parameters)),
             new ImageInspector(),
             $this->folders,
             $this->files,
             $this->entityManager,
+            $this->renditions,
         );
     }
 

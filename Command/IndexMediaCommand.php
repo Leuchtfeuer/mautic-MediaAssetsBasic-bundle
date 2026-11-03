@@ -28,20 +28,25 @@ final class IndexMediaCommand extends Command
     {
         $this
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Log changes without writing to the database')
-            ->addOption('all', null, InputOption::VALUE_NONE, 'Re-inspect every file on disk, not only new or changed ones');
+            ->addOption('all', null, InputOption::VALUE_NONE, 'Re-inspect every file on disk, not only new or changed ones')
+            ->addOption('skip-renditions', null, InputOption::VALUE_NONE, 'Index files without generating standard/thumb renditions');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io       = new SymfonyStyle($input, $output);
-        $dryRun   = (bool) $input->getOption('dry-run');
-        $reindex  = (bool) $input->getOption('all');
+        $io              = new SymfonyStyle($input, $output);
+        $dryRun          = (bool) $input->getOption('dry-run');
+        $reindex         = (bool) $input->getOption('all');
+        $skipRenditions  = (bool) $input->getOption('skip-renditions');
 
         if ($dryRun) {
             $io->note('Dry run — no database writes.');
         }
+        if ($skipRenditions) {
+            $io->note('Skipping rendition generation.');
+        }
 
-        $summary = $this->index->run($reindex, $dryRun);
+        $summary = $this->index->run($reindex, $dryRun, $skipRenditions);
         $this->renderSummary($io, $summary);
 
         $io->success('Media index run finished.');
@@ -63,6 +68,10 @@ final class IndexMediaCommand extends Command
                 ['Folders soft-deleted (missing on disk)', (string) $summary->foldersSoftDeleted],
                 ['Folders restored', (string) $summary->foldersRestored],
                 ['Skipped entries', (string) $summary->skipped],
+                ['Renditions generated', (string) $summary->renditionsGenerated],
+                ['Renditions skipped', (string) $summary->renditionsSkipped],
+                ['Renditions failed', (string) $summary->renditionsFailed],
+                ['Elapsed seconds', number_format($summary->elapsedSeconds, 3)],
             ],
         );
     }
